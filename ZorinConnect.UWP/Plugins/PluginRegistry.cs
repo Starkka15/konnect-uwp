@@ -17,6 +17,7 @@ namespace ZorinConnect.Plugins
             () => new PingPlugin(),
             () => new BatteryPlugin(),
             () => new FindMyPhonePlugin(),
+            () => new ConnectivityReportPlugin(),
         };
 
         public static IEnumerable<IPlugin> CreateAll() => Factories.Select(f => f());
