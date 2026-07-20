@@ -18,7 +18,9 @@
 
         <Button Grid.Row="2" x:Name="RefreshButton" Content="Refresh" Click="OnRefreshClick" Margin="0,0,0,8" />
 
-        <ListView Grid.Row="3" x:Name="DeviceList" SelectionMode="None" />
+        <ScrollViewer Grid.Row="3">
+            <StackPanel x:Name="DevicePanel" />
+        </ScrollViewer>
 
         <ScrollViewer Grid.Row="4" x:Name="LogScroll" Margin="0,8,0,0"
                       Background="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}">

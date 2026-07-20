@@ -28,7 +28,8 @@ namespace ZorinConnect
 
             var core = KdeConnectCore.Instance;
             core.Log += OnLog;
-            core.LinksChanged += OnLinksChanged;
+            core.LinksChanged += RenderDevices;
+            core.PairingChanged += _ => RenderDevices();
 
             try
             {
@@ -36,7 +37,7 @@ namespace ZorinConnect
                 await core.StartAsync();
                 StartupTrace.Mark("core-started");
                 OwnNameText.Text = DeviceHelper.DeviceName;
-                OwnIdText.Text = $"{DeviceHelper.DeviceId} · proto v{DeviceHelper.ProtocolVersion} · tcp {core.Lan.TcpPort}\n{SslHelper.CertificateHash(SslHelper.Certificate)}";
+                OwnIdText.Text = $"{DeviceHelper.DeviceId} · proto v{DeviceHelper.ProtocolVersion} · tcp {core.Lan.TcpPort}";
             }
             catch (Exception ex)
             {
@@ -45,16 +46,65 @@ namespace ZorinConnect
             }
         }
 
-        private void OnLinksChanged()
+        private void RenderDevices()
         {
             _ = Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
             {
-                DeviceList.Items.Clear();
-                foreach (var kv in KdeConnectCore.Instance.Links.Values.OrderBy(t => t.Item1.Name))
+                var core = KdeConnectCore.Instance;
+                DevicePanel.Children.Clear();
+                foreach (var kv in core.Links.Values.OrderBy(t => t.Item1.Name))
                 {
-                    DeviceList.Items.Add($"{kv.Item1.Name} · {kv.Item1.Type.ToProtocolString()} · v{kv.Item1.ProtocolVersion} · {kv.Item2.RemoteAddress}");
+                    var info = kv.Item1;
+                    core.Pairing.TryGetValue(info.Id, out var handler);
+                    var state = handler?.State ?? PairState.NotPaired;
+
+                    var box = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
+                    box.Children.Add(new TextBlock
+                    {
+                        Text = $"{info.Name}  ·  {info.Type.ToProtocolString()}  ·  v{info.ProtocolVersion}",
+                        FontSize = 16,
+                    });
+                    box.Children.Add(new TextBlock
+                    {
+                        Text = $"{kv.Item2.RemoteAddress}  ·  {state}",
+                        FontSize = 11, Opacity = 0.6,
+                    });
+
+                    var vkey = handler?.VerificationKey();
+                    if (vkey != null)
+                        box.Children.Add(new TextBlock { Text = $"Verify: {vkey}", FontSize = 14, FontFamily = new Windows.UI.Xaml.Media.FontFamily("Consolas") });
+
+                    var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
+                    string id = info.Id;
+                    switch (state)
+                    {
+                        case PairState.NotPaired:
+                            buttons.Children.Add(MakeButton("Pair", () => core.RequestPair(id)));
+                            break;
+                        case PairState.Requested:
+                            buttons.Children.Add(new TextBlock { Text = "waiting for peer…", VerticalAlignment = VerticalAlignment.Center, Opacity = 0.7 });
+                            break;
+                        case PairState.RequestedByPeer:
+                            buttons.Children.Add(MakeButton("Accept", () => core.AcceptPair(id)));
+                            buttons.Children.Add(MakeButton("Reject", () => core.RejectPair(id)));
+                            break;
+                        case PairState.Paired:
+                            buttons.Children.Add(MakeButton("Unpair", () => core.Unpair(id)));
+                            break;
+                    }
+                    box.Children.Add(buttons);
+                    DevicePanel.Children.Add(box);
                 }
+                if (DevicePanel.Children.Count == 0)
+                    DevicePanel.Children.Add(new TextBlock { Text = "No devices connected", Opacity = 0.5 });
             });
+        }
+
+        private Button MakeButton(string text, Action onClick)
+        {
+            var b = new Button { Content = text, Margin = new Thickness(0, 0, 8, 0) };
+            b.Click += (s, e) => onClick();
+            return b;
         }
 
         private void OnLog(string msg)
