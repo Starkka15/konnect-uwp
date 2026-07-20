@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Windows.ApplicationModel.Core;
 using Windows.Foundation.Metadata;
 using Windows.Media.Playback;
 using Windows.Media.Core;
@@ -48,8 +49,19 @@ namespace ZorinConnect.Plugins
         {
             if (np.Type != RequestType) return false;
             _ctx?.Log?.Invoke("findmyphone: ring requested");
-            StartRing();
+            RunOnUi(StartRing); // packet arrives on the link's background thread; ring is UI-affine
             return true;
+        }
+
+        /// <summary>Marshal to the UI thread — MediaPlayer/DispatcherTimer/VibrationDevice are
+        /// thread-affine, and packets arrive on a background read-loop thread (RPC_E_WRONG_THREAD).</summary>
+        private static void RunOnUi(Windows.UI.Core.DispatchedHandler h)
+        {
+            var disp = CoreApplication.MainView?.CoreWindow?.Dispatcher;
+            if (disp != null && !disp.HasThreadAccess)
+                _ = disp.RunAsync(CoreDispatcherPriority.High, h);
+            else
+                h();
         }
 
         /// <summary>FindRemoteDevice: ring the desktop.</summary>
@@ -84,10 +96,13 @@ namespace ZorinConnect.Plugins
         {
             if (!_ringing) return;
             _ringing = false;
-            try { _player?.Pause(); _player?.Dispose(); } catch { }
-            _player = null;
-            StopVibration();
-            RingStopped?.Invoke();
+            RunOnUi(() =>
+            {
+                try { _player?.Pause(); _player?.Dispose(); } catch { }
+                _player = null;
+                StopVibration();
+                RingStopped?.Invoke();
+            });
         }
 
         // ---- vibration (phone only; VibrationDevice is on the mobile extension SDK) ----

@@ -35,6 +35,7 @@ namespace ZorinConnect
 
             try
             {
+                await Helpers.DeviceInfoProbe.ProbeAsync(); // diagnostic: log all device-info sources
                 StartupTrace.Mark("core-start");
                 await core.StartAsync();
                 StartupTrace.Mark("core-started");
