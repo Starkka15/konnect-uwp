@@ -7,6 +7,7 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Windows.ApplicationModel.Background;
 using Windows.Networking;
 using Windows.Networking.Sockets;
 using ZorinConnect.Core;
@@ -404,6 +405,140 @@ namespace ZorinConnect.Backends.Lan
             try { _tcpListener?.Dispose(); } catch { }
             _udpSocket = null;
             _tcpListener = null;
+        }
+
+        // ---------- background socket transfer (SocketActivityTrigger, §T30) ----------
+
+        private const string UdpSocketId = "zc-udp";
+        private const string TcpSocketId = "zc-tcp";
+        private bool _transferEnabled;
+        private bool _transferred;
+
+        /// <summary>Enable the discovery sockets to be handed to the OS broker for standby wake.</summary>
+        public void EnableBackgroundWake(Guid taskId)
+        {
+            if (!Windows.Foundation.Metadata.ApiInformation.IsTypePresent(
+                    "Windows.ApplicationModel.Background.SocketActivityTrigger")) return;
+            try
+            {
+                _udpSocket?.EnableTransferOwnership(taskId, SocketActivityConnectedStandbyAction.Wake);
+                _tcpListener?.EnableTransferOwnership(taskId, SocketActivityConnectedStandbyAction.Wake);
+                _transferEnabled = true;
+                StartupTrace.Mark("bg-wake-enabled");
+            }
+            catch (Exception e) { StartupTrace.MarkError("bg-wake-enable", e); }
+        }
+
+        /// <summary>Suspend: hand sockets to the broker so it can wake us on activity.</summary>
+        public void TransferToBroker()
+        {
+            if (!_transferEnabled) return;
+            try
+            {
+                _udpSocket?.TransferOwnership(UdpSocketId);
+                _udpSocket = null;
+                StartupTrace.Mark("bg-udp-transferred");
+            }
+            catch (Exception e) { StartupTrace.MarkError("bg-udp-transfer", e); }
+            try
+            {
+                _tcpListener?.TransferOwnership(TcpSocketId);
+                _tcpListener = null;
+                StartupTrace.Mark("bg-tcp-transferred");
+            }
+            catch (Exception e) { StartupTrace.MarkError("bg-tcp-transfer", e); }
+            _transferred = true;
+        }
+
+        /// <summary>Resume to foreground: reclaim broker-owned sockets and rebind fresh listeners.</summary>
+        public async Task ReclaimAndRestartAsync()
+        {
+            if (!_transferred) return;
+            _transferred = false;
+            try
+            {
+                foreach (var kv in SocketActivityInformation.AllSockets)
+                {
+                    var i = kv.Value;
+                    try { i.DatagramSocket?.Dispose(); } catch { }
+                    try { i.StreamSocketListener?.Dispose(); } catch { }
+                    try { i.StreamSocket?.Dispose(); } catch { }
+                }
+            }
+            catch (Exception e) { StartupTrace.MarkError("bg-reclaim", e); }
+
+            _udpSocket = null;
+            _tcpListener = null;
+            _transferEnabled = false;
+            await StartAsync();
+            if (BackgroundManager.Registered) EnableBackgroundWake(BackgroundManager.SocketTaskId);
+            StartupTrace.Mark("bg-reclaimed-restarted");
+        }
+
+        /// <summary>
+        /// Background wake (in-process, possibly a FRESH process if the app was terminated).
+        /// Robust across all reasons: free any broker-held sockets, rebind fresh listeners, re-arm
+        /// the wake, and re-broadcast so the desktop reconnects (fresh TLS). ConnectionAccepted also
+        /// handles the reclaimed inbound socket directly.
+        /// </summary>
+        public async Task HandleSocketActivityAsync(SocketActivityTriggerDetails details)
+        {
+            var reason = details.Reason;
+            StartupTrace.Mark($"bg-activity:{reason}");
+            try
+            {
+                Helpers.SslHelper.EnsureInitialized(); // fresh process may not have keys loaded yet
+
+                // A directly-reclaimable inbound connection?
+                StreamSocket inbound = null;
+                try { inbound = details.SocketInformation?.StreamSocket; } catch { }
+
+                // Free any broker-held sockets so the ports are available to rebind.
+                try
+                {
+                    foreach (var kv in SocketActivityInformation.AllSockets)
+                    {
+                        var i = kv.Value;
+                        try { i.DatagramSocket?.Dispose(); } catch { }
+                        try { i.StreamSocketListener?.Dispose(); } catch { }
+                        if (i.StreamSocket != null && i.StreamSocket != inbound) { try { i.StreamSocket.Dispose(); } catch { } }
+                    }
+                }
+                catch (Exception e) { StartupTrace.MarkError("bg-freeall", e); }
+
+                _udpSocket = null;
+                _tcpListener = null;
+                _transferEnabled = false;
+                _transferred = false;
+
+                await StartTcpListenerAsync();
+                await StartUdpListenerAsync();
+                if (BackgroundManager.Registered) EnableBackgroundWake(BackgroundManager.SocketTaskId);
+
+                if (reason == SocketActivityTriggerReason.ConnectionAccepted && inbound != null)
+                    HandleReclaimedInbound(inbound);
+                else
+                    await BroadcastIdentityAsync(); // desktop reconnects -> OnTcpConnectionReceived
+
+                StartupTrace.Mark("bg-rebound");
+            }
+            catch (Exception e) { StartupTrace.MarkError("bg-activity", e); }
+        }
+
+        private async void HandleReclaimedInbound(StreamSocket socket)
+        {
+            try
+            {
+                var input = socket.InputStream.AsStreamForRead(0);
+                var output = socket.OutputStream.AsStreamForWrite(0);
+                var line = await Task.Run(() => ReadSingleLine(input, NetworkPacket.MaxIdentityPacketSize));
+                if (line == null) { socket.Dispose(); return; }
+                var np = NetworkPacket.Deserialize(line);
+                var peer = DeviceInfo.FromIdentityPacket(np);
+                if (peer == null || peer.Id == DeviceHelper.DeviceId) { socket.Dispose(); return; }
+                await Task.Run(() => FinishHandshake(socket, input, output, peer, tlsServerRole: false));
+            }
+            catch (Exception e) { StartupTrace.MarkError("bg-inbound", e); try { socket.Dispose(); } catch { } }
         }
     }
 }

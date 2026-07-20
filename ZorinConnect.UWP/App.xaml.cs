@@ -22,7 +22,12 @@ namespace ZorinConnect
             {
                 this.InitializeComponent();
                 this.Suspending += OnSuspending;
-                this.Resuming += (s, ev) => StartupTrace.Mark("resuming");
+                this.Resuming += async (s, ev) =>
+                {
+                    StartupTrace.Mark("resuming");
+                    try { await KdeConnectCore.Instance.OnResumingAsync(); }
+                    catch (Exception ex) { StartupTrace.MarkError("resuming", ex); }
+                };
                 StartupTrace.Mark("app-ctor-done");
             }
             catch (Exception ex)
@@ -85,9 +90,23 @@ namespace ZorinConnect
 
         private void OnSuspending(object sender, SuspendingEventArgs e)
         {
-            StartupTrace.Mark($"suspending:deadline={e.SuspendingOperation.Deadline:HH:mm:ss}");
+            StartupTrace.Mark("suspending");
             var deferral = e.SuspendingOperation.GetDeferral();
+            try { KdeConnectCore.Instance.OnSuspending(); } // hand sockets to broker for standby wake
+            catch (Exception ex) { StartupTrace.MarkError("suspending", ex); }
             deferral.Complete();
+        }
+
+        protected override void OnBackgroundActivated(BackgroundActivatedEventArgs args)
+        {
+            StartupTrace.Mark($"bg-activated:{args.TaskInstance.Task?.Name}");
+            var instance = args.TaskInstance;
+            if (instance.TriggerDetails is Windows.Networking.Sockets.SocketActivityTriggerDetails details)
+            {
+                var deferral = instance.GetDeferral();
+                var _ = KdeConnectCore.Instance.HandleSocketActivityAsync(details)
+                    .ContinueWith(t => deferral.Complete());
+            }
         }
     }
 }

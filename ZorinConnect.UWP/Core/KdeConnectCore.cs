@@ -55,7 +55,20 @@ namespace ZorinConnect.Core
             StartupTrace.Mark("ssl-init-done");
             await Lan.StartAsync();
             StartupTrace.Mark("lan-started");
+
+            // Always-on: register the socket-activity background task + arm the discovery sockets
+            // for standby wake (§T29/T30).
+            await BackgroundManager.EnsureRegisteredAsync();
+            if (BackgroundManager.Registered)
+                Lan.EnableBackgroundWake(BackgroundManager.SocketTaskId);
         }
+
+        public void OnSuspending() => Lan.TransferToBroker();
+
+        public Task OnResumingAsync() => Lan.ReclaimAndRestartAsync();
+
+        public Task HandleSocketActivityAsync(Windows.Networking.Sockets.SocketActivityTriggerDetails d)
+            => Lan.HandleSocketActivityAsync(d);
 
         public Task RefreshAsync() => Lan.OnNetworkChangeAsync();
 
