@@ -13,10 +13,16 @@ namespace ZorinConnect
         {
             StartupTrace.Mark("app-ctor");
             this.UnhandledException += OnUnhandledException;
+            System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (s, ev) =>
+            {
+                StartupTrace.MarkError("unobserved-task", ev.Exception);
+                ev.SetObserved();
+            };
             try
             {
                 this.InitializeComponent();
                 this.Suspending += OnSuspending;
+                this.Resuming += (s, ev) => StartupTrace.Mark("resuming");
                 StartupTrace.Mark("app-ctor-done");
             }
             catch (Exception ex)
@@ -48,6 +54,7 @@ namespace ZorinConnect
                     rootFrame.Navigate(typeof(MainPage), e.Arguments);
                 }
                 Window.Current.Activate();
+                ExecutionGuard.Request();
                 StartupTrace.Mark("launch-done");
             }
             catch (Exception ex)
@@ -78,6 +85,7 @@ namespace ZorinConnect
 
         private void OnSuspending(object sender, SuspendingEventArgs e)
         {
+            StartupTrace.Mark($"suspending:deadline={e.SuspendingOperation.Deadline:HH:mm:ss}");
             var deferral = e.SuspendingOperation.GetDeferral();
             deferral.Complete();
         }

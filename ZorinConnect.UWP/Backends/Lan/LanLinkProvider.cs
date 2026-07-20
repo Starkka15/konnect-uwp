@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -35,6 +36,16 @@ namespace ZorinConnect.Backends.Lan
         private StreamSocketListener _tcpListener;
         private int _tcpPort;
         private long _lastBroadcastMs;
+        private readonly ConcurrentDictionary<string, Windows.Storage.Streams.IOutputStream> _broadcastStreams
+            = new ConcurrentDictionary<string, Windows.Storage.Streams.IOutputStream>();
+        private readonly ConcurrentDictionary<string, DatagramSocket> _sendSockets
+            = new ConcurrentDictionary<string, DatagramSocket>();
+
+        // W10M FINDING (§B1/§V21): any outbound UDP datagram send fast-fails this app (uncatchable,
+        // pre-transmit, API-independent — 7 device builds). Broadcast disabled until send path solved;
+        // discovery is passive (listen for the desktop's broadcast) + TCP dial-back in the meantime.
+        public static bool IsolateNoUdpListener = false;
+        public static bool IsolateNoBroadcast = true;
 
         private readonly ConcurrentDictionary<string, long> _lastConnectionByDevice = new ConcurrentDictionary<string, long>();
         private readonly ConcurrentDictionary<string, long> _lastConnectionByIp = new ConcurrentDictionary<string, long>();
@@ -57,9 +68,19 @@ namespace ZorinConnect.Backends.Lan
 
         public async Task StartAsync()
         {
+            StartupTrace.Mark("lan-tcp-bind");
             await StartTcpListenerAsync();
-            await StartUdpListenerAsync();
-            await BroadcastIdentityAsync();
+            if (!IsolateNoUdpListener)
+            {
+                StartupTrace.Mark("lan-udp-bind");
+                await StartUdpListenerAsync();
+            }
+            if (!IsolateNoBroadcast)
+            {
+                StartupTrace.Mark("lan-broadcast");
+                await BroadcastIdentityAsync();
+                StartupTrace.Mark("lan-broadcast-done");
+            }
         }
 
         public async Task OnNetworkChangeAsync()
@@ -120,28 +141,45 @@ namespace ZorinConnect.Backends.Lan
             Interlocked.Exchange(ref _lastBroadcastMs, now);
 
             if (_tcpPort == 0) return; // §I.udp: not sent if TCP server not bound yet
+            if (_udpSocket == null) return; // send through the persistent bound socket only
 
             var np = IdentityPacket();
             np.Set("tcpPort", _tcpPort);
-            var bytes = Encoding.UTF8.GetBytes(np.Serialize());
+            var payload = Encoding.UTF8.GetBytes(np.Serialize()).AsBuffer();
 
-            try
+            // Subnet-directed broadcast per adapter (255.255.255.255 fast-fails on W10M).
+            // Output streams are CACHED and never disposed — disposing the stream returned by
+            // GetOutputStreamAsync tears down shared DatagramSocket state and the async send
+            // completion then fast-fails the process (uncatchable) on W10M.
+            var targets = NetworkHelper.BroadcastAddresses();
+            foreach (var addr in targets)
             {
-                using (var socket = new DatagramSocket())
+                try
                 {
-                    var stream = await socket.GetOutputStreamAsync(new HostName("255.255.255.255"), UdpPort.ToString());
-                    using (var writer = stream.AsStreamForWrite(0))
-                    {
-                        await writer.WriteAsync(bytes, 0, bytes.Length);
-                        await writer.FlushAsync();
-                    }
+                    var stream = await GetBroadcastStreamAsync(addr);
+                    if (stream == null) continue;
+                    await stream.WriteAsync(payload);
+                    await stream.FlushAsync();
+                    Log?.Invoke($"identity broadcast -> {addr}");
                 }
-                Log?.Invoke("identity broadcast sent");
+                catch (Exception e)
+                {
+                    StartupTrace.MarkError("broadcast", e);
+                    Log?.Invoke($"broadcast to {addr} failed: {e.Message}");
+                }
             }
-            catch (Exception e)
-            {
-                Log?.Invoke($"broadcast failed: {e.Message}");
-            }
+        }
+
+        private async Task<Windows.Storage.Streams.IOutputStream> GetBroadcastStreamAsync(string addr)
+        {
+            if (_broadcastStreams.TryGetValue(addr, out var cached)) return cached;
+            // Dedicated send socket via ConnectAsync (the reliable W10M unicast/broadcast idiom);
+            // GetOutputStreamAsync on the bound listener socket fast-fails the process on send.
+            var sendSocket = new DatagramSocket();
+            await sendSocket.ConnectAsync(new HostName(addr), UdpPort.ToString());
+            _sendSockets[addr] = sendSocket;
+            _broadcastStreams[addr] = sendSocket.OutputStream;
+            return sendSocket.OutputStream;
         }
 
         private NetworkPacket IdentityPacket()
@@ -153,6 +191,7 @@ namespace ZorinConnect.Backends.Lan
 
         private async void OnUdpMessageReceived(DatagramSocket sender, DatagramSocketMessageReceivedEventArgs args)
         {
+            StartupTrace.Mark("udp-rx");
             try
             {
                 string line;
@@ -177,10 +216,12 @@ namespace ZorinConnect.Backends.Lan
                 if (!RateLimitOk(info.Id, remoteHost.CanonicalName)) return; // §V6
 
                 Log?.Invoke($"udp identity from {info.Name} ({remoteHost.CanonicalName}:{tcpPort})");
+                StartupTrace.Mark($"udp-connect-out:{remoteHost.CanonicalName}:{tcpPort}");
                 await ConnectAsync(remoteHost, tcpPort, info);
             }
             catch (Exception e)
             {
+                StartupTrace.MarkError("udp-rx", e);
                 Log?.Invoke($"udp receive error: {e.Message}");
             }
         }
@@ -267,6 +308,7 @@ namespace ZorinConnect.Backends.Lan
 
         private void FinishHandshake(StreamSocket socket, Stream input, Stream output, DeviceInfo bootstrapInfo, bool tlsServerRole)
         {
+            StartupTrace.Mark($"handshake:{(tlsServerRole ? "srv" : "cli")}:{bootstrapInfo.Id}");
             // Downgrade guard (§I): trusted device advertising lower protocol than stored -> refuse
             var stored = StoredProtocolVersionProvider?.Invoke(bootstrapInfo.Id) ?? 0;
             if (SettingsStore.IsTrusted(bootstrapInfo.Id) && stored > 0 && bootstrapInfo.ProtocolVersion < stored)

@@ -23,17 +23,44 @@ namespace ZorinConnect.Core
                 if (!_rotated)
                 {
                     _rotated = true;
-                    settings.Values[KeyPrevious] = settings.Values.ContainsKey(KeyCurrent) ? settings.Values[KeyCurrent] : "";
+                    var prev = settings.Values.ContainsKey(KeyCurrent) ? settings.Values[KeyCurrent] as string : "";
+                    settings.Values[KeyPrevious] = prev;
                     settings.Values[KeyCurrent] = "";
+                    // LocalSettings writes are synchronous -> prev holds the dead run's FULL trace.
+                    MirrorToFile($"PREV-RUN-FULL=[{prev}]");
                 }
                 Buffer.Append(stage).Append(';');
                 var s = Buffer.ToString();
                 settings.Values[KeyCurrent] = s.Length > 4000 ? s.Substring(s.Length - 4000) : s;
+                MirrorToFile(s);
             }
             catch
             {
                 // tracing must never take the app down
             }
+        }
+
+        /// <summary>
+        /// Fire-and-forget mirror to MusicLibrary\zctrace.txt — survives crashes AND is readable
+        /// off-device via WDP (/api/filesystem/apps/...), unlike LocalSettings.
+        /// </summary>
+        private static readonly System.Threading.SemaphoreSlim FileLock = new System.Threading.SemaphoreSlim(1, 1);
+
+        private static void MirrorToFile(string content)
+        {
+            var stamp = DateTime.Now.ToString("HH:mm:ss.fff");
+            var _ = System.Threading.Tasks.Task.Run(async () =>
+            {
+                await FileLock.WaitAsync();
+                try
+                {
+                    var file = await Windows.Storage.KnownFolders.MusicLibrary.CreateFileAsync(
+                        "zctrace.txt", CreationCollisionOption.OpenIfExists);
+                    await FileIO.AppendTextAsync(file, $"{stamp} {content}\n");
+                }
+                catch { }
+                finally { FileLock.Release(); }
+            });
         }
 
         public static void MarkError(string stage, Exception ex)
