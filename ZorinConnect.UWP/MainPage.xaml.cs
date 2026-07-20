@@ -89,6 +89,7 @@ namespace ZorinConnect
                             buttons.Children.Add(MakeButton("Reject", () => core.RejectPair(id)));
                             break;
                         case PairState.Paired:
+                            buttons.Children.Add(MakeButton("Ping", () => core.GetPlugin<Plugins.PingPlugin>(id)?.SendPing()));
                             buttons.Children.Add(MakeButton("Unpair", () => core.Unpair(id)));
                             break;
                     }

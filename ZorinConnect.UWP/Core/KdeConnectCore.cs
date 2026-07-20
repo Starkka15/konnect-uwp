@@ -31,10 +31,17 @@ namespace ZorinConnect.Core
 
         private bool _started;
 
+        /// <summary>deviceId -> loaded plugins for the paired link.</summary>
+        public ConcurrentDictionary<string, System.Collections.Generic.List<ZorinConnect.Plugins.IPlugin>> DevicePlugins { get; }
+            = new ConcurrentDictionary<string, System.Collections.Generic.List<ZorinConnect.Plugins.IPlugin>>();
+
         private KdeConnectCore()
         {
             Lan.Log += msg => Log?.Invoke(msg);
             Lan.LinkEstablished += OnLinkEstablished;
+            // Advertise exactly the implemented plugin capabilities (§V10).
+            Lan.IncomingCapabilities = ZorinConnect.Plugins.PluginRegistry.AllIncomingCapabilities();
+            Lan.OutgoingCapabilities = ZorinConnect.Plugins.PluginRegistry.AllOutgoingCapabilities();
         }
 
         public async Task StartAsync()
@@ -71,6 +78,10 @@ namespace ZorinConnect.Core
 
             link.ConnectionLost += OnLinkLost(info.Id);
             link.PacketReceived += OnPacket;
+
+            // Already-trusted device reconnecting -> load plugins immediately.
+            if (initial == PairState.Paired) LoadPlugins(info.Id);
+
             LinksChanged?.Invoke();
             PairingChanged?.Invoke(info.Id);
         }
@@ -84,12 +95,37 @@ namespace ZorinConnect.Core
                 if (Links.TryGetValue(deviceId, out var t) && t.Item1.Certificate != null)
                     SslHelper.StorePeerCertificate(deviceId, t.Item1.Certificate);
                 SettingsStore.SetTrusted(deviceId, true);
+                LoadPlugins(deviceId);
             }
             else if (state == PairState.NotPaired)
             {
+                UnloadPlugins(deviceId);
                 SettingsStore.WipeDevice(deviceId); // §V18
             }
             PairingChanged?.Invoke(deviceId);
+        }
+
+        private void LoadPlugins(string deviceId)
+        {
+            if (!Links.TryGetValue(deviceId, out var t)) return;
+            UnloadPlugins(deviceId);
+            var info = t.Item1;
+            var link = t.Item2;
+            var list = new System.Collections.Generic.List<ZorinConnect.Plugins.IPlugin>();
+            foreach (var plugin in ZorinConnect.Plugins.PluginRegistry.CreateAll())
+            {
+                var ctx = new ZorinConnect.Plugins.PluginContext(info, np => link.SendPacket(np), m => Log?.Invoke(m));
+                plugin.OnCreate(ctx);
+                list.Add(plugin);
+            }
+            DevicePlugins[deviceId] = list;
+            Log?.Invoke($"loaded {list.Count} plugin(s) for {info.Name}");
+        }
+
+        private void UnloadPlugins(string deviceId)
+        {
+            if (DevicePlugins.TryRemove(deviceId, out var list))
+                foreach (var p in list) { try { p.OnDestroy(); } catch { } }
         }
 
         private Action<LanLink> OnLinkLost(string deviceId)
@@ -99,6 +135,7 @@ namespace ZorinConnect.Core
                 if (Links.TryGetValue(deviceId, out var cur) && ReferenceEquals(cur.Item2, link))
                 {
                     Links.TryRemove(deviceId, out _);
+                    UnloadPlugins(deviceId);
                     LinksChanged?.Invoke();
                     Log?.Invoke($"link lost: {deviceId}");
                 }
@@ -114,7 +151,13 @@ namespace ZorinConnect.Core
                     handler.PacketReceived(np);
                 return;
             }
-            // T8/T10: dispatch to plugins
+            // Dispatch to plugins (only loaded when paired)
+            if (DevicePlugins.TryGetValue(link.DeviceId, out var plugins))
+                foreach (var p in plugins)
+                {
+                    try { if (p.OnPacketReceived(np)) return; }
+                    catch (System.Exception e) { Log?.Invoke($"plugin {p.Key} error: {e.Message}"); }
+                }
         }
 
         // ---- pairing API for the UI ----
@@ -122,5 +165,12 @@ namespace ZorinConnect.Core
         public void AcceptPair(string deviceId) { if (Pairing.TryGetValue(deviceId, out var h)) h.AcceptPairing(); }
         public void RejectPair(string deviceId) { if (Pairing.TryGetValue(deviceId, out var h)) h.RejectPairing(); }
         public void Unpair(string deviceId) { if (Pairing.TryGetValue(deviceId, out var h)) h.Unpair(); }
+
+        public T GetPlugin<T>(string deviceId) where T : class, ZorinConnect.Plugins.IPlugin
+        {
+            if (DevicePlugins.TryGetValue(deviceId, out var list))
+                foreach (var p in list) if (p is T match) return match;
+            return null;
+        }
     }
 }
