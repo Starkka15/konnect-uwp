@@ -1,37 +1,38 @@
 using System;
 using System.Collections.Generic;
-using Windows.ApplicationModel.Core;
+using Windows.Data.Xml.Dom;
 using Windows.Foundation.Metadata;
-using Windows.Media.Playback;
-using Windows.Media.Core;
 using Windows.Phone.Devices.Notification;
-using Windows.UI.Core;
-using Windows.UI.Xaml;
+using Windows.System.Threading;
+using Windows.UI.Notifications;
 using ZorinConnect.Core;
+using ZorinConnect.Helpers;
 
 namespace ZorinConnect.Plugins
 {
     /// <summary>
-    /// FindMyPhone (SPEC T17). Receives kdeconnect.findmyphone.request -> ring loop at max volume
-    /// + vibrate + full-screen dismiss overlay. FindRemoteDevice send side is a separate action
-    /// (RingRemote) using the same packet aimed at the desktop.
+    /// FindMyPhone (SPEC T17). Rings the phone on kdeconnect.findmyphone.request.
+    /// The ring is a scenario="alarm" TOAST with looping audio — this is the only mechanism that
+    /// plays on the LOCK SCREEN / from a backgrounded or socket-woken app (MediaPlayer on the UI
+    /// thread only plays once foregrounded). Vibration uses a ThreadPoolTimer (no UI thread).
     /// </summary>
     public sealed class FindMyPhonePlugin : IPlugin
     {
         private const string RequestType = "kdeconnect.findmyphone.request";
+        private const string ToastTag = "zc-findmyphone";
 
         private PluginContext _ctx;
-        private MediaPlayer _player;
-        private DispatcherTimer _vibrateTimer;
+        private ToastNotification _toast;
+        private ThreadPoolTimer _vibrateTimer;
+        private VibrationDevice _vibrator;
         private bool _ringing;
 
-        public event Action RingStarted;   // UI shows dismiss overlay
+        public event Action RingStarted;   // in-app overlay (foreground only)
         public event Action RingStopped;
 
         public string Key => "FindMyPhonePlugin";
         public string DisplayName => "Find My Phone";
         public bool EnabledByDefault => true;
-        // Phone RECEIVES findmyphone (ring me); also SENDS it (ring the desktop) = FindRemoteDevice.
         public IEnumerable<string> SupportedPacketTypes => new[] { RequestType };
         public IEnumerable<string> OutgoingPacketTypes => new[] { RequestType };
 
@@ -49,22 +50,10 @@ namespace ZorinConnect.Plugins
         {
             if (np.Type != RequestType) return false;
             _ctx?.Log?.Invoke("findmyphone: ring requested");
-            RunOnUi(StartRing); // packet arrives on the link's background thread; ring is UI-affine
+            StartRing(); // NOT UI-marshaled — must work while locked / backgrounded
             return true;
         }
 
-        /// <summary>Marshal to the UI thread — MediaPlayer/DispatcherTimer/VibrationDevice are
-        /// thread-affine, and packets arrive on a background read-loop thread (RPC_E_WRONG_THREAD).</summary>
-        private static void RunOnUi(Windows.UI.Core.DispatchedHandler h)
-        {
-            var disp = CoreApplication.MainView?.CoreWindow?.Dispatcher;
-            if (disp != null && !disp.HasThreadAccess)
-                _ = disp.RunAsync(CoreDispatcherPriority.High, h);
-            else
-                h();
-        }
-
-        /// <summary>FindRemoteDevice: ring the desktop.</summary>
         public void RingRemote() => _ctx?.SendPacket(new NetworkPacket(RequestType));
 
         public bool IsRinging => _ringing;
@@ -73,42 +62,64 @@ namespace ZorinConnect.Plugins
         {
             if (_ringing) return;
             _ringing = true;
-
-            try
-            {
-                _player = new MediaPlayer
-                {
-                    IsLoopingEnabled = true,
-                    AudioCategory = MediaPlayerAudioCategory.Alerts,
-                    Volume = 1.0,
-                };
-                // Bundled alarm WAV — MediaPlayer can't play the ms-winsoundevent: scheme.
-                _player.Source = MediaSource.CreateFromUri(
-                    new Uri("ms-appx:///Assets/findmyphone.wav"));
-                _player.Play();
-            }
-            catch (Exception e) { _ctx?.Log?.Invoke($"ring audio failed: {e.Message}"); }
-
-            StartVibration();
-            RingStarted?.Invoke();
+            ShowAlarmToast();      // audio on lock screen, any thread
+            StartVibration();      // ThreadPoolTimer, any thread
+            RingStarted?.Invoke(); // in-app overlay if/when foreground
         }
 
         public void StopRing()
         {
             if (!_ringing) return;
             _ringing = false;
-            RunOnUi(() =>
-            {
-                try { _player?.Pause(); _player?.Dispose(); } catch { }
-                _player = null;
-                StopVibration();
-                RingStopped?.Invoke();
-            });
+            HideAlarmToast();
+            StopVibration();
+            RingStopped?.Invoke();
         }
 
-        // ---- vibration (phone only; VibrationDevice is on the mobile extension SDK) ----
+        // ---- alarm toast (plays looping audio on the lock screen) ----
 
-        private VibrationDevice _vibrator;
+        private void ShowAlarmToast()
+        {
+            try
+            {
+                var name = SecurityEscape(DeviceHelper.DeviceName);
+                // scenario="alarm" -> loops audio + persists until dismissed, shows on lock screen.
+                var xml =
+                    "<toast scenario='alarm' launch='findmyphone'>" +
+                    "<visual><binding template='ToastGeneric'>" +
+                    "<text>Find My Phone</text>" +
+                    "<text>" + name + " is ringing</text>" +
+                    "</binding></visual>" +
+                    "<audio src='ms-appx:///Assets/findmyphone.wav' loop='true'/>" +
+                    "<actions><action content='Found it' arguments='dismiss' activationType='foreground'/></actions>" +
+                    "</toast>";
+                var doc = new XmlDocument();
+                doc.LoadXml(xml);
+                _toast = new ToastNotification(doc) { Tag = ToastTag };
+                _toast.Dismissed += (s, e) => StopRing(); // user dismissed -> stop vibration/state
+                _toast.Activated += (s, e) => StopRing();
+                ToastNotificationManager.CreateToastNotifier().Show(_toast);
+            }
+            catch (Exception e) { _ctx?.Log?.Invoke($"alarm toast failed: {e.Message}"); }
+        }
+
+        private void HideAlarmToast()
+        {
+            try
+            {
+                var notifier = ToastNotificationManager.CreateToastNotifier();
+                if (_toast != null) notifier.Hide(_toast);
+                _toast = null;
+                // Also clear any lingering copy from history.
+                ToastNotificationManager.History?.Remove(ToastTag);
+            }
+            catch { }
+        }
+
+        private static string SecurityEscape(string s) =>
+            (s ?? "").Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("'", "&apos;");
+
+        // ---- vibration (ThreadPoolTimer — no UI dispatcher needed) ----
 
         private void StartVibration()
         {
@@ -116,17 +127,17 @@ namespace ZorinConnect.Plugins
             try
             {
                 _vibrator = VibrationDevice.GetDefault();
-                _vibrateTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
-                _vibrateTimer.Tick += (s, e) => { try { _vibrator?.Vibrate(TimeSpan.FromMilliseconds(600)); } catch { } };
-                _vibrateTimer.Start();
-                _vibrator.Vibrate(TimeSpan.FromMilliseconds(600));
+                _vibrator?.Vibrate(TimeSpan.FromMilliseconds(600));
+                _vibrateTimer = ThreadPoolTimer.CreatePeriodicTimer(
+                    t => { try { _vibrator?.Vibrate(TimeSpan.FromMilliseconds(600)); } catch { } },
+                    TimeSpan.FromMilliseconds(1200));
             }
             catch (Exception e) { _ctx?.Log?.Invoke($"vibrate failed: {e.Message}"); }
         }
 
         private void StopVibration()
         {
-            try { _vibrateTimer?.Stop(); } catch { }
+            try { _vibrateTimer?.Cancel(); } catch { }
             _vibrateTimer = null;
             try { _vibrator?.Cancel(); } catch { }
             _vibrator = null;
