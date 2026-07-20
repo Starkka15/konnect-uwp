@@ -82,7 +82,7 @@ T11|.|payload channel: sender ServerSocket 1739..1764 + TLS, receiver connect, p
 T12|.|mDNS: Dnssd announce (instance=deviceId) + DeviceWatcher browse → unicast identity reply|V19
 T13|.|UI shell: MainPage (hamburger: device list Connected/Available/Remembered, refresh), DevicePage (pair btn/verify code/accept-reject, plugin grid, unpair, encryption-info dialog: both cert SHA256 fingerprints + protocol ver), SettingsPage (device name, theme, trusted networks, custom hosts list w/ validation `^[0-9A-Za-z._-]+$`), PluginSettingsPage per device|-
 T14|.|trusted networks: SSID via WlanConnectionProfileDetails.GetConnectedSsid, list UI, enforcement|V19
-T15|~|plugin Ping: both directions, toast on recv, context-menu send|V1
+T15|x|plugin Ping: both directions, toast on recv, context-menu send|V1
 T16|.|plugin Battery: PowerManager.RemainingChargePercent/BatteryStatus → kdeconnect.battery {currentCharge,isCharging,thresholdEvent 0/1 low@≤15 once-latch !charging}, delta-only sends, recv → device list UI|V1
 T17|.|plugin FindMyPhone: recv request → navigate FindMyPhone page + loop ringtone max vol (MediaPlayer, restore vol on stop) + vibrate (VibrationDevice); FindRemoteDevice: send request from context menu|V1
 T18|.|plugin Clipboard: DataTransfer.Clipboard, ContentChanged(foreground) → kdeconnect.clipboard{content}; clipboard.connect{timestamp ms,content} on link up; recv → SetContent; conflict: connect applied iff ts≠0 & ts≥local ts; resync on app resume + manual send button|V1
