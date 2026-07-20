@@ -30,20 +30,32 @@ namespace ZorinConnect
             core.Log += OnLog;
             core.LinksChanged += RenderDevices;
             core.PairingChanged += _ => RenderDevices();
+            core.RingStarted += ShowRingOverlay;
+            core.RingStopped += HideRingOverlay;
 
             try
             {
                 StartupTrace.Mark("core-start");
                 await core.StartAsync();
                 StartupTrace.Mark("core-started");
-                OwnNameText.Text = DeviceHelper.DeviceName;
+                NameBox.Text = DeviceHelper.DeviceName;
                 OwnIdText.Text = $"{DeviceHelper.DeviceId} · proto v{DeviceHelper.ProtocolVersion} · tcp {core.Lan.TcpPort}";
             }
             catch (Exception ex)
             {
-                OwnNameText.Text = "startup failed";
+                NameBox.Text = "startup failed";
                 OnLog(ex.ToString());
             }
+        }
+
+        private async void OnRenameClick(object sender, RoutedEventArgs e)
+        {
+            var name = NameBox.Text?.Trim();
+            if (string.IsNullOrEmpty(name)) return;
+            DeviceHelper.DeviceName = name;
+            NameBox.Text = DeviceHelper.DeviceName; // reflect filtering
+            OnLog($"renamed to {DeviceHelper.DeviceName}; re-broadcasting");
+            await KdeConnectCore.Instance.RefreshAsync(); // re-send identity so the desktop updates
         }
 
         private void RenderDevices()
@@ -90,6 +102,7 @@ namespace ZorinConnect
                             break;
                         case PairState.Paired:
                             buttons.Children.Add(MakeButton("Ping", () => core.GetPlugin<Plugins.PingPlugin>(id)?.SendPing()));
+                            buttons.Children.Add(MakeButton("Ring PC", () => core.GetPlugin<Plugins.FindMyPhonePlugin>(id)?.RingRemote()));
                             buttons.Children.Add(MakeButton("Unpair", () => core.Unpair(id)));
                             break;
                     }
@@ -122,6 +135,21 @@ namespace ZorinConnect
         private async void OnRefreshClick(object sender, RoutedEventArgs e)
         {
             await KdeConnectCore.Instance.RefreshAsync();
+        }
+
+        private void ShowRingOverlay()
+        {
+            _ = Dispatcher.RunAsync(CoreDispatcherPriority.High, () => RingOverlay.Visibility = Visibility.Visible);
+        }
+
+        private void HideRingOverlay()
+        {
+            _ = Dispatcher.RunAsync(CoreDispatcherPriority.High, () => RingOverlay.Visibility = Visibility.Collapsed);
+        }
+
+        private void OnDismissRing(object sender, Windows.UI.Xaml.Input.TappedRoutedEventArgs e)
+        {
+            Plugins.FindMyPhonePlugin.Current?.StopRing();
         }
     }
 }

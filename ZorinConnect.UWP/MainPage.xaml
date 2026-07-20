@@ -13,7 +13,10 @@
             <RowDefinition Height="200" />
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" x:Name="OwnNameText" FontSize="22" />
+        <StackPanel Grid.Row="0" Orientation="Horizontal">
+            <TextBox x:Name="NameBox" FontSize="20" MinWidth="200" />
+            <Button Content="Rename" Click="OnRenameClick" Margin="8,0,0,0" VerticalAlignment="Center" />
+        </StackPanel>
         <TextBlock Grid.Row="1" x:Name="OwnIdText" FontSize="11" Opacity="0.6" TextWrapping="Wrap" Margin="0,2,0,8" />
 
         <Button Grid.Row="2" x:Name="RefreshButton" Content="Refresh" Click="OnRefreshClick" Margin="0,0,0,8" />
@@ -26,5 +29,16 @@
                       Background="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}">
             <TextBlock x:Name="LogText" FontSize="10" FontFamily="Consolas" TextWrapping="Wrap" Padding="6" />
         </ScrollViewer>
+
+        <Grid x:Name="RingOverlay" Grid.RowSpan="5" Background="#DD15A6F0" Visibility="Collapsed"
+              Tapped="OnDismissRing">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="&#xE1D6;" FontFamily="Segoe MDL2 Assets" FontSize="72"
+                           Foreground="White" HorizontalAlignment="Center" />
+                <TextBlock Text="Found it!" FontSize="32" Foreground="White" HorizontalAlignment="Center" Margin="0,16,0,0" />
+                <TextBlock Text="tap anywhere to stop" FontSize="16" Foreground="White" Opacity="0.8"
+                           HorizontalAlignment="Center" Margin="0,8,0,0" />
+            </StackPanel>
+        </Grid>
     </Grid>
 </Page>

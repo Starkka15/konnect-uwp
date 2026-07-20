@@ -47,7 +47,17 @@ robocopy $ilcDir $layout /E /XF *.pdb *.g.cs DotNetNative.debugger-services-def.
 if ($LASTEXITCODE -ge 8) { Write-Error "layout robocopy failed"; exit 1 }
 $manifest = Get-Content "$layout\AppxManifest.xml" -Raw
 $manifest = $manifest -replace '\s*<PackageDependency Name="Microsoft\.VCLibs\.140\.00\.Debug"[^/]*/>', ''
+
+# Auto-bump the 4th version component so WDP can install-over WITHOUT uninstall (preserves the
+# phone's ApplicationData = deviceId/cert/pairing survive across deploys). Counter persists on Z:.
+$revFile = 'Z:\zorinconnect\.build-rev'
+$rev = 0
+if (Test-Path $revFile) { $rev = [int](Get-Content $revFile -Raw) }
+$rev++
+Set-Content $revFile $rev -NoNewline
+$manifest = $manifest -replace '(<Identity[^>]*Version=")(\d+)\.(\d+)\.(\d+)\.(\d+)(")', "`${1}`${2}.`${3}.`${4}.$rev`${6}"
 Set-Content "$layout\AppxManifest.xml" $manifest -Encoding UTF8
+Write-Host "package revision -> .$rev"
 
 Write-Host "=== makeappx ==="
 & $makeappx pack /d $layout /p $appxOut /o

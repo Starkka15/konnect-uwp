@@ -28,6 +28,8 @@ namespace ZorinConnect.Core
         public event Action LinksChanged;
         public event Action<string> Log;
         public event Action<string> PairingChanged; // deviceId
+        public event Action RingStarted;
+        public event Action RingStopped;
 
         private bool _started;
 
@@ -116,6 +118,11 @@ namespace ZorinConnect.Core
             {
                 var ctx = new ZorinConnect.Plugins.PluginContext(info, np => link.SendPacket(np), m => Log?.Invoke(m));
                 plugin.OnCreate(ctx);
+                if (plugin is ZorinConnect.Plugins.FindMyPhonePlugin fmp)
+                {
+                    fmp.RingStarted += () => RingStarted?.Invoke();
+                    fmp.RingStopped += () => RingStopped?.Invoke();
+                }
                 list.Add(plugin);
             }
             DevicePlugins[deviceId] = list;

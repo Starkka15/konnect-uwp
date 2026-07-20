@@ -11,9 +11,8 @@ urllib3.disable_warnings()
 HOST = os.environ.get("ZC_HOST", "https://192.168.5.17")
 WMID = os.environ.get("ZC_WMID", "3833765007940722240809168817185100068099660988657185202370593716")
 # Identity Name=ZorinConnect.W10M, Publisher CN=Developer -> hash 1b7q5sa4bwdpa (computed, algo verified vs 8wekyb3d8bbwe)
-VERSION = "0.1.0.0"
-PFN  = f"ZorinConnect.W10M_{VERSION}_arm__1b7q5sa4bwdpa"
-PRAID = "ZorinConnect.W10M_1b7q5sa4bwdpa!App"
+PFAM = "ZorinConnect.W10M"  # PackageFamilyName as reported by WDP (version-independent)
+PRAID = "ZorinConnect.W10M_1b7q5sa4bwdpa!App"  # PackageRelativeId (includes publisher hash)
 APPX = "/mnt/ssd-raid/vm-shared/zorinconnect/ZorinConnect_ARM.appx"
 
 s = requests.Session()
@@ -29,17 +28,30 @@ def csrf():
 def hdrs(tok):
     return {"X-CSRF-Token": tok, "CSRF-Token": tok}
 
+def installed_pfn():
+    """Current PackageFullName for our family (version bumps each build)."""
+    r = s.get(f"{HOST}/api/app/packagemanager/packages", timeout=15)
+    for p in r.json().get("InstalledPackages", []):
+        if p.get("PackageFamilyName") == PFAM:
+            return p.get("PackageFullName")
+    return None
+
 def main():
     launch_only = "--launch-only" in sys.argv
     tok = csrf()
     print(f"CSRF={tok}")
 
     if not launch_only:
-        print("Uninstalling...")
-        r = s.delete(f"{HOST}/api/app/packagemanager/package?package={PFN}", headers=hdrs(tok), timeout=60)
-        print(f"  uninstall HTTP={r.status_code} {r.text[:200]}")
-        time.sleep(3)
-        tok = csrf()
+        # NO uninstall — install-over as a version update so the phone's ApplicationData
+        # (deviceId/cert/pairing) survives. build.ps1 bumps the appx revision each build so WDP
+        # accepts the update. Pass --clean to force a wipe+reinstall (fresh unpaired device).
+        if "--clean" in sys.argv:
+            pfn = installed_pfn()
+            if pfn:
+                print(f"Uninstalling (--clean) {pfn}...")
+                s.delete(f"{HOST}/api/app/packagemanager/package?package={pfn}", headers=hdrs(tok), timeout=60)
+                time.sleep(3)
+                tok = csrf()
 
         print("Installing appx...")
         fname = APPX.split("/")[-1]
@@ -64,9 +76,12 @@ def main():
                 print("INSTALL ERROR"); sys.exit(1)
 
     tok = csrf()
+    pfn = installed_pfn()
+    if not pfn:
+        print("could not resolve installed package full name"); sys.exit(1)
     appid_b64 = base64.b64encode(PRAID.encode()).decode()
-    pfn_b64 = base64.b64encode(PFN.encode()).decode()
-    print("Launching...")
+    pfn_b64 = base64.b64encode(pfn.encode()).decode()
+    print(f"Launching {pfn}...")
     r = s.post(f"{HOST}/api/taskmanager/app?appid={appid_b64}&package={pfn_b64}",
                headers=hdrs(tok), timeout=30)
     print(f"  launch HTTP={r.status_code} {r.text[:200]}")

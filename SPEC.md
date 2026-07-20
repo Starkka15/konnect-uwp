@@ -84,7 +84,7 @@ T13|.|UI shell: MainPage (hamburger: device list Connected/Available/Remembered,
 T14|.|trusted networks: SSID via WlanConnectionProfileDetails.GetConnectedSsid, list UI, enforcement|V19
 T15|x|plugin Ping: both directions, toast on recv, context-menu send|V1
 T16|x|plugin Battery: PowerManager.RemainingChargePercent/BatteryStatus → kdeconnect.battery {currentCharge,isCharging,thresholdEvent 0/1 low@≤15 once-latch !charging}, delta-only sends, recv → device list UI|V1
-T17|.|plugin FindMyPhone: recv request → navigate FindMyPhone page + loop ringtone max vol (MediaPlayer, restore vol on stop) + vibrate (VibrationDevice); FindRemoteDevice: send request from context menu|V1
+T17|x|plugin FindMyPhone: recv request → navigate FindMyPhone page + loop ringtone max vol (MediaPlayer, restore vol on stop) + vibrate (VibrationDevice); FindRemoteDevice: send request from context menu|V1
 T18|.|plugin Clipboard: DataTransfer.Clipboard, ContentChanged(foreground) → kdeconnect.clipboard{content}; clipboard.connect{timestamp ms,content} on link up; recv → SetContent; conflict: connect applied iff ts≠0 & ts≥local ts; resync on app resume + manual send button|V1
 T19|.|plugin Share: recv file→DownloadsFolder.CreateFileAsync (+lastModified apply, open flag→Launcher), text→clipboard+toast, url→LaunchUriAsync; send via ShareTarget contract + picker; numberOfFiles/totalPayloadSize + .update packet; batch semantics|V16,V1
 T20|.|plugin RunCommand: request list on create, cache per device, list page tap→{key}, setup packet, zorinconnect://runcommand activation, pin-to-start secondary tiles per command|V1

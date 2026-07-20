@@ -105,6 +105,13 @@
     <Content Include="default.rd.xml" />
   </ItemGroup>
 
+  <!-- Windows Mobile Extension SDK — phone-only APIs (VibrationDevice, hardware back button). -->
+  <ItemGroup>
+    <SDKReference Include="WindowsMobile, Version=10.0.16299.0">
+      <Name>Windows Mobile Extensions for the UWP</Name>
+    </SDKReference>
+  </ItemGroup>
+
   <!-- NuGet packages — dependency lockstep per SPEC §C, do not bump -->
   <ItemGroup>
     <PackageReference Include="Microsoft.NETCore.UniversalWindowsPlatform">
