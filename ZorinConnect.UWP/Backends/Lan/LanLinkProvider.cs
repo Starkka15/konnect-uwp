@@ -41,11 +41,11 @@ namespace ZorinConnect.Backends.Lan
         private readonly ConcurrentDictionary<string, DatagramSocket> _sendSockets
             = new ConcurrentDictionary<string, DatagramSocket>();
 
-        // W10M FINDING (§B1/§V21): any outbound UDP datagram send fast-fails this app (uncatchable,
-        // pre-transmit, API-independent — 7 device builds). Broadcast disabled until send path solved;
-        // discovery is passive (listen for the desktop's broadcast) + TCP dial-back in the meantime.
+        // Diagnostic toggles retained (SPEC §V22). The earlier "UDP send fatal" was a MISDIAGNOSIS:
+        // real cause was JToken.Value<T>() fast-failing on the OWN broadcast echo (§B1). Broadcast
+        // works now — GSConnect discovers the phone.
         public static bool IsolateNoUdpListener = false;
-        public static bool IsolateNoBroadcast = true;
+        public static bool IsolateNoBroadcast = false;
 
         private readonly ConcurrentDictionary<string, long> _lastConnectionByDevice = new ConcurrentDictionary<string, long>();
         private readonly ConcurrentDictionary<string, long> _lastConnectionByIp = new ConcurrentDictionary<string, long>();
@@ -197,23 +197,30 @@ namespace ZorinConnect.Backends.Lan
                 string line;
                 using (var reader = args.GetDataReader())
                 {
+                    StartupTrace.Mark("udp-reader");
                     if (reader.UnconsumedBufferLength > NetworkPacket.MaxIdentityPacketSize) return; // §V5
                     var buf = new byte[reader.UnconsumedBufferLength];
                     reader.ReadBytes(buf);
                     line = Encoding.UTF8.GetString(buf, 0, buf.Length);
                 }
+                StartupTrace.Mark($"udp-line:{line.Length}");
 
                 var np = NetworkPacket.Deserialize(line);
+                StartupTrace.Mark($"udp-parsed:{np.Type}");
                 if (np.Type != NetworkPacket.TypeIdentity) return;
                 var info = DeviceInfo.FromIdentityPacket(np);
+                StartupTrace.Mark($"udp-info:{(info == null ? "null" : info.Id)}");
                 if (info == null) return;                                   // §V5
                 if (info.Id == DeviceHelper.DeviceId) return;               // own broadcast echo
 
                 var tcpPort = np.GetInt("tcpPort");
+                StartupTrace.Mark($"udp-tcpport:{tcpPort}");
                 if (tcpPort < MinPort || tcpPort > MaxPort) return;         // §I.tcp validated range
 
                 var remoteHost = args.RemoteAddress;
+                StartupTrace.Mark($"udp-remote:{remoteHost?.CanonicalName}");
                 if (!RateLimitOk(info.Id, remoteHost.CanonicalName)) return; // §V6
+                StartupTrace.Mark("udp-ratelimit-ok");
 
                 Log?.Invoke($"udp identity from {info.Name} ({remoteHost.CanonicalName}:{tcpPort})");
                 StartupTrace.Mark($"udp-connect-out:{remoteHost.CanonicalName}:{tcpPort}");
@@ -257,6 +264,7 @@ namespace ZorinConnect.Backends.Lan
             {
                 var cts = new CancellationTokenSource(HandshakeTimeoutMs);
                 await socket.ConnectAsync(host, tcpPort.ToString()).AsTask(cts.Token);
+                StartupTrace.Mark("tcp-connected");
 
                 var input = socket.InputStream.AsStreamForRead(0);
                 var output = socket.OutputStream.AsStreamForWrite(0);
@@ -265,11 +273,13 @@ namespace ZorinConnect.Backends.Lan
                 var identityBytes = Encoding.UTF8.GetBytes(IdentityPacket().Serialize());
                 await output.WriteAsync(identityBytes, 0, identityBytes.Length);
                 await output.FlushAsync();
+                StartupTrace.Mark("tcp-identity-sent");
 
                 await Task.Run(() => FinishHandshake(socket, input, output, bootstrapInfo, tlsServerRole: true));
             }
             catch (Exception e)
             {
+                StartupTrace.MarkError("tcp-connect", e);
                 Log?.Invoke($"outbound connect to {host.CanonicalName}:{tcpPort} failed: {e.Message}");
                 try { socket.Dispose(); } catch { }
             }

@@ -86,8 +86,18 @@ namespace ZorinConnect.Core
             return info;
         }
 
-        private static HashSet<string> ToSet(JArray arr) =>
-            arr == null ? null : new HashSet<string>(arr.Values<string>().Where(s => !string.IsNullOrEmpty(s)));
+        private static HashSet<string> ToSet(JArray arr)
+        {
+            if (arr == null) return null;
+            var set = new HashSet<string>();
+            foreach (var tok in arr)
+            {
+                if (tok == null || tok.Type == JTokenType.Null) continue;
+                var s = tok.ToString();
+                if (!string.IsNullOrEmpty(s)) set.Add(s);
+            }
+            return set;
+        }
 
         public void FillIdentityPacket(NetworkPacket np)
         {

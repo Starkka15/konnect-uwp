@@ -63,7 +63,8 @@ V17: SFTP creds: user="kdeconnect", password 28-char random regenerated per star
 V18: unpair → remove trusted_devices entry + clear whole per-device container + notify plugins (incl. not-loaded ones).
 V19: trusted networks: untrusted SSID → ⊥ broadcast, ⊥ mDNS announce, inbound identity from non-paired ignored; paired devices always allowed. Default all-allowed.
 V20: protocolVersion + capabilities ⊥ persisted across app restarts (re-learned each connection); protocolVersion persisted only for downgrade guard.
-V21: outbound UDP datagram send = process fast-fail on W10M (see §B1) — UNSOLVED. Until fixed: ⊥ self-broadcast; discovery MUST be passive (listen for desktop UDP broadcast on 1716 → dial TCP back) + mDNS (T12, IF Dnssd multicast send survives — untested, likely same fault) + custom-host TCP dial. Any code that sends a UDP datagram ! proven on-device first. Diagnostics (StartupTrace, Isolate* toggles) STAY until send path solved & released.
+V21: RETRACTED (was "UDP send fatal" — misdiagnosis, see §B1). UDP send/broadcast works.
+V22: ⊥ `JToken.Value<T>()` / `JToken.Values<T>()` anywhere — generic reflection fast-fails under .NET Native ARM (uncatchable, no dump). Use explicit `(long)tok` / `(string)tok` / `tok.ToString()` casts gated on `tok.Type` (JTokenType checks). Applies to ALL packet body reads across every plugin. StartupTrace (LocalSettings-sync + MusicLibrary\zctrace.txt, readable via WDP `/api/filesystem/apps/file?knownfolderid=Music&filename=zctrace.txt`) + Isolate* toggles STAY until release — the diagnostic that cracked this.
 
 ## §T TASKS
 
@@ -111,5 +112,5 @@ T40|.|ship: appx signed, GitHub repo + AI.md disclosure, README recipe|-
 ## §B BUGS
 
 id|date|cause|fix
-B1|2026-07-20|Outbound UDP datagram send fast-fails app on W10M (640XL, .NET Native ARM): uncatchable, pre-transmit (PC rx'd nothing), API-independent (GetOutputStreamAsync + ConnectAsync, throwaway + persistent + cached socket, broadcast + subnet + unicast-to-self + unicast-to-other — 7 device builds). No managed exception (UnhandledException/UnobservedTask/Suspending all silent), no WER dump. Truth table: UDP listener bind = safe, UDP RECEIVE = safe, any SEND = death. Bisected via StartupTrace file-mirror (LocalSettings synchronous + MusicLibrary append, readable via WDP). Reaches core-started then dies ≤3s once a send runs.|V21
+B1|2026-07-20|**Root cause: `JToken.Value<T>()` generic reflection fast-fails under .NET Native ARM** (uncatchable, no managed exc, no WER dump). Manifested 2 ways, both mistaken for socket bugs: (a) sending a UDP broadcast → OWN packet echoes to the 1716 listener → OnUdpMessageReceived parses it → `DeviceInfo.FromIdentityPacket` calls `GetString/GetInt/GetArray` (Value<T>) → death; looked like "send fatal" b/c crash always trailed a send. (b) real desktop identity received → `NetworkPacket.Deserialize`'s `Value<long>/<string>` → death between udp-line & udp-parsed. FIX: replace ALL `Value<T>()`/`Values<T>()` with explicit JToken casts + JTokenType checks (NetworkPacket accessors, Deserialize, DeviceInfo.ToSet). Verified on-device: full pipeline runs (udp-rx→parse→TCP dial→identity send→TLS-server handshake→v8 encrypted-identity parse) + GSConnect discovers phone. §B1 earlier "UDP-send fatal / §V21" was WRONG — retracted.|V22
 

@@ -46,13 +46,39 @@ namespace ZorinConnect.Core
         }
 
         // ---- body accessors (Android NetworkPacket API shape) ----
-        public string GetString(string key, string def = "") => Body.TryGetValue(key, out var t) ? t.Value<string>() ?? def : def;
-        public int GetInt(string key, int def = 0) => Body.TryGetValue(key, out var t) ? t.Value<int>() : def;
-        public long GetLong(string key, long def = 0) => Body.TryGetValue(key, out var t) ? t.Value<long>() : def;
-        public bool GetBool(string key, bool def = false) => Body.TryGetValue(key, out var t) ? t.Value<bool>() : def;
-        public double GetDouble(string key, double def = 0) => Body.TryGetValue(key, out var t) ? t.Value<double>() : def;
-        public JArray GetArray(string key) => Body.TryGetValue(key, out var t) ? t as JArray : null;
-        public bool Has(string key) => Body.ContainsKey(key);
+        // Explicit JToken casts only — the generic JToken.Value<T>() path fast-fails under .NET
+        // Native ARM (missing reflection metadata for the instantiations). See SPEC §B2/§V22.
+        public string GetString(string key, string def = "")
+        {
+            var t = Body[key];
+            return t == null || t.Type == JTokenType.Null ? def : t.ToString();
+        }
+        public int GetInt(string key, int def = 0) => (int)GetLongInternal(key, def);
+        public long GetLong(string key, long def = 0) => GetLongInternal(key, def);
+        public double GetDouble(string key, double def = 0)
+        {
+            var t = Body[key];
+            if (t == null || t.Type == JTokenType.Null) return def;
+            if (t.Type == JTokenType.Float || t.Type == JTokenType.Integer) return (double)t;
+            return double.TryParse(t.ToString(), out var v) ? v : def;
+        }
+        public bool GetBool(string key, bool def = false)
+        {
+            var t = Body[key];
+            if (t == null || t.Type == JTokenType.Null) return def;
+            if (t.Type == JTokenType.Boolean) return (bool)t;
+            return bool.TryParse(t.ToString(), out var v) ? v : def;
+        }
+        public JArray GetArray(string key) => Body[key] as JArray;
+        public bool Has(string key) => Body[key] != null;
+
+        private long GetLongInternal(string key, long def)
+        {
+            var t = Body[key];
+            if (t == null || t.Type == JTokenType.Null) return def;
+            if (t.Type == JTokenType.Integer) return (long)t;
+            return long.TryParse(t.ToString(), out var v) ? v : def;
+        }
 
         public NetworkPacket Set(string key, string v) { Body[key] = v; return this; }
         public NetworkPacket Set(string key, int v) { Body[key] = v; return this; }
@@ -85,15 +111,27 @@ namespace ZorinConnect.Core
         /// <summary>Parse one line (without or with trailing newline). Throws JsonException on malformed input.</summary>
         public static NetworkPacket Deserialize(string line)
         {
+            StartupTrace.Mark("deser-parse");
             var root = JObject.Parse(line);
-            var id = root.TryGetValue("id", out var idTok) ? idTok.Value<long>() : 0; // id not correlated on receive
-            var type = root.Value<string>("type");
+            StartupTrace.Mark("deser-parsed");
+            long id = ToLong(root["id"]);
+            StartupTrace.Mark("deser-id");
+            var type = (string)root["type"];
+            StartupTrace.Mark($"deser-type:{type}");
             if (string.IsNullOrEmpty(type))
                 throw new JsonException("packet has no type");
             var body = root["body"] as JObject;
-            long payloadSize = root.TryGetValue("payloadSize", out var ps) ? ps.Value<long>() : 0;
+            long payloadSize = ToLong(root["payloadSize"]);
             var pti = root["payloadTransferInfo"] as JObject;
             return new NetworkPacket(id, type, body, payloadSize, pti);
+        }
+
+        private static long ToLong(JToken t)
+        {
+            if (t == null || t.Type == JTokenType.Null) return 0;
+            if (t.Type == JTokenType.Integer) return (long)t;
+            long.TryParse(t.ToString(), out var v);
+            return v;
         }
     }
 }
