@@ -129,7 +129,7 @@ namespace ZorinConnect.Core
             var list = new System.Collections.Generic.List<ZorinConnect.Plugins.IPlugin>();
             foreach (var plugin in ZorinConnect.Plugins.PluginRegistry.CreateAll())
             {
-                var ctx = new ZorinConnect.Plugins.PluginContext(info, np => link.SendPacket(np), m => Log?.Invoke(m));
+                var ctx = new ZorinConnect.Plugins.PluginContext(info, link, np => link.SendPacket(np), m => Log?.Invoke(m));
                 plugin.OnCreate(ctx);
                 if (plugin is ZorinConnect.Plugins.FindMyPhonePlugin fmp)
                 {

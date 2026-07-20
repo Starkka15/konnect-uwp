@@ -78,7 +78,7 @@ T7|.|BC TLS wrapper: TlsServerProtocol/TlsClientProtocol over StreamSocket strea
 T8|.|Device+Link layer: device registry (ConcurrentDict), links priority list, reachable/paired axes, send queue, read loop, packet dispatch to plugins, DeviceStats(24h mem)|V15,V20
 T9|x|PairingHandler: v8 state machine, timestamps, verify-key, timeouts, accept/reject, TOFU persist, unpair|V7,V8,V9,V18
 T10|x|plugin framework: IPlugin (onCreate/onDestroy/onPacket, supported/outgoing types, enabledByDefault, per-device settings, req/opt permission gates), factory registry, capability intersection loading|V10
-T11|~|payload channel: sender ServerSocket 1739..1764 + TLS, receiver connect, progress, cancel|V2,V16
+T11|x|payload channel: sender ServerSocket 1739..1764 + TLS, receiver connect, progress, cancel|V2,V16
 T12|.|mDNS: Dnssd announce (instance=deviceId) + DeviceWatcher browse → unicast identity reply|V19
 T13|.|UI shell: MainPage (hamburger: device list Connected/Available/Remembered, refresh), DevicePage (pair btn/verify code/accept-reject, plugin grid, unpair, encryption-info dialog: both cert SHA256 fingerprints + protocol ver), SettingsPage (device name, theme, trusted networks, custom hosts list w/ validation `^[0-9A-Za-z._-]+$`), PluginSettingsPage per device|-
 T14|.|trusted networks: SSID via WlanConnectionProfileDetails.GetConnectedSsid, list UI, enforcement|V19
@@ -86,7 +86,7 @@ T15|x|plugin Ping: both directions, toast on recv, context-menu send|V1
 T16|x|plugin Battery: PowerManager.RemainingChargePercent/BatteryStatus → kdeconnect.battery {currentCharge,isCharging,thresholdEvent 0/1 low@≤15 once-latch !charging}, delta-only sends, recv → device list UI|V1
 T17|x|plugin FindMyPhone: recv request → navigate FindMyPhone page + loop ringtone max vol (MediaPlayer, restore vol on stop) + vibrate (VibrationDevice); FindRemoteDevice: send request from context menu|V1
 T18|x|plugin Clipboard: DataTransfer.Clipboard, ContentChanged(foreground) → kdeconnect.clipboard{content}; clipboard.connect{timestamp ms,content} on link up; recv → SetContent; conflict: connect applied iff ts≠0 & ts≥local ts; resync on app resume + manual send button|V1
-T19|~|plugin Share: recv file→DownloadsFolder.CreateFileAsync (+lastModified apply, open flag→Launcher), text→clipboard+toast, url→LaunchUriAsync; send via ShareTarget contract + picker; numberOfFiles/totalPayloadSize + .update packet; batch semantics|V16,V1
+T19|x|plugin Share: recv file→DownloadsFolder.CreateFileAsync (+lastModified apply, open flag→Launcher), text→clipboard+toast, url→LaunchUriAsync; send via ShareTarget contract + picker; numberOfFiles/totalPayloadSize + .update packet; batch semantics|V16,V1
 T20|.|plugin RunCommand: request list on create, cache per device, list page tap→{key}, setup packet, zorinconnect://runcommand activation, pin-to-start secondary tiles per command|V1
 T21|.|plugin MousePad (send): touchpad page (deltas ×accel×sens, 2-finger scroll, 1/2/3-tap L/R/M, hold=drag, gyro mode Gyrometer), keyboard via CharacterReceived/KeyDown → key/specialKey/modifiers, recv keyboardstate gate; SpecialKeysMap 1-32 exact|V1
 T22|.|plugin Presenter: gyro pointer {dx,dy}=−gyro×0.04, stop packet, prev/next=PgUp/PgDn specialKey, fullscreen/esc|V1

@@ -4,6 +4,7 @@ using System.IO;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Tls;
 using Org.BouncyCastle.Security;
+using ZorinConnect.Core;
 using ZorinConnect.Helpers;
 using BcCertificate = Org.BouncyCastle.Crypto.Tls.Certificate;
 using BcX509Certificate = Org.BouncyCastle.X509.X509Certificate;
@@ -133,6 +134,35 @@ namespace ZorinConnect.Backends.Lan
         public override ProtocolVersion MinimumVersion => ProtocolVersion.TLSv12;
         public override ProtocolVersion ClientVersion => ProtocolVersion.TLSv12;
 
+        // Offer only ECDHE_ECDSA suites (GSConnect's cert is EC secp256r1) so the ServerKeyExchange
+        // is signed with ECDSA — avoids RSA-PSS / other schemes whose hash byte BC 1.8.1 can't map.
+        public override int[] GetCipherSuites() => new[]
+        {
+            CipherSuite.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+            CipherSuite.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+            CipherSuite.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384,
+            CipherSuite.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+            CipherSuite.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+            CipherSuite.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+        };
+
+        // Advertise only hashes BC 1.8.1 can create (sha256/384/512). The default list can include
+        // a hash the server then uses in its signature which BC's CreateHash rejects ("unknown
+        // HashAlgorithm") — the actual payload-handshake failure.
+        public override System.Collections.IDictionary GetClientExtensions()
+        {
+            var ext = base.GetClientExtensions() ?? new System.Collections.Hashtable();
+            var sigAlgs = new System.Collections.ArrayList();
+            foreach (byte hash in new[] { HashAlgorithm.sha256, HashAlgorithm.sha384, HashAlgorithm.sha512 })
+            {
+                sigAlgs.Add(new SignatureAndHashAlgorithm(hash, SignatureAlgorithm.ecdsa));
+                sigAlgs.Add(new SignatureAndHashAlgorithm(hash, SignatureAlgorithm.rsa));
+            }
+            TlsUtilities.AddSignatureAlgorithmsExtension(ext, sigAlgs);
+            StartupTrace.Mark($"client-ext-sigalgs:{sigAlgs.Count}");
+            return ext;
+        }
+
         public override TlsAuthentication GetAuthentication()
         {
             return new ZcTlsAuthentication(this);
@@ -151,10 +181,27 @@ namespace ZorinConnect.Backends.Lan
 
             public TlsCredentials GetClientCredentials(CertificateRequest certificateRequest)
             {
-                // Always present our cert — desktop pins it after pairing.
+                // Pick an ECDSA sig-alg that the server actually advertised — hardcoding
+                // (sha256,ecdsa) makes DefaultTlsSignerCredentials throw when the request lists a
+                // different set, and BC then sends an EMPTY cert (GSConnect: "peer did not send a
+                // certificate"). Our key is EC secp256r1, so any *_ecdsa the server lists works.
+                SignatureAndHashAlgorithm chosen = null;
+                var supported = certificateRequest?.SupportedSignatureAlgorithms;
+                if (supported != null)
+                {
+                    foreach (SignatureAndHashAlgorithm sa in supported)
+                    {
+                        if (sa.Signature == SignatureAlgorithm.ecdsa)
+                        {
+                            if (sa.Hash == HashAlgorithm.sha256) { chosen = sa; break; } // prefer sha256
+                            if (chosen == null) chosen = sa;
+                        }
+                    }
+                }
+                if (chosen == null) chosen = new SignatureAndHashAlgorithm(HashAlgorithm.sha256, SignatureAlgorithm.ecdsa);
+                StartupTrace.Mark($"payload-clientcreds:{chosen.Hash}/{chosen.Signature}");
                 return new DefaultTlsSignerCredentials(_outer.mContext, TlsHelper.OwnTlsCertificate(),
-                    SslHelper.KeyPair.Private,
-                    new SignatureAndHashAlgorithm(HashAlgorithm.sha256, SignatureAlgorithm.ecdsa));
+                    SslHelper.KeyPair.Private, chosen);
             }
         }
     }

@@ -29,6 +29,17 @@ namespace ZorinConnect.Core
         public bool HasPayload => PayloadFactory != null && PayloadSize != 0;
         public bool HasPayloadTransferInfo => PayloadTransferInfo != null && PayloadTransferInfo.Count > 0;
 
+        /// <summary>Payload port the peer is serving on (0 if none). Explicit cast — no Value&lt;T&gt;.</summary>
+        public int PayloadPort
+        {
+            get
+            {
+                if (PayloadTransferInfo != null && PayloadTransferInfo.TryGetValue("port", out var t)
+                    && t.Type == JTokenType.Integer) return (int)(long)t;
+                return 0;
+            }
+        }
+
         public NetworkPacket(string type)
         {
             Type = type;
@@ -96,10 +107,10 @@ namespace ZorinConnect.Core
                 ["type"] = Type,
                 ["body"] = Body,
             };
-            if (HasPayload)
+            if (PayloadSize != 0 && PayloadTransferInfo != null)
             {
                 root["payloadSize"] = PayloadSize;
-                root["payloadTransferInfo"] = PayloadTransferInfo ?? new JObject();
+                root["payloadTransferInfo"] = PayloadTransferInfo;
             }
             var json = JsonConvert.SerializeObject(root, Formatting.None);
             // QJson compat: Android does jsonString.replace("\\/", "/"). Newtonsoft doesn't escape

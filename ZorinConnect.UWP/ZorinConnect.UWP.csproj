@@ -121,11 +121,16 @@
     <PackageReference Include="Newtonsoft.Json">
       <Version>13.0.3</Version>
     </PackageReference>
-    <!-- SPEC §C: only new dep vs baseline — TLS server role + cert gen.
-         1.9.0 is netstandard2.0-only (NU1202 vs uap10.0.15063); 1.8.1.4 ships netstandard1.3. -->
-    <PackageReference Include="Portable.BouncyCastle">
-      <Version>1.8.1.4</Version>
-    </PackageReference>
+  </ItemGroup>
+
+  <!-- PATCHED BouncyCastle (netstandard1.3, built from pcl-v1.8.1.4) — TrackHashAlgorithms skips
+       hash algorithms it can't create (GnuTLS advertises byte-8 "intrinsic" in the payload
+       CertificateRequest; stock BC threw "unknown HashAlgorithm"). Source patch in
+       scratchpad/pbc/crypto/src/crypto/tls/TlsUtilities.cs. Replaces the NuGet package. -->
+  <ItemGroup>
+    <Reference Include="BouncyCastle.Crypto">
+      <HintPath>libs\BouncyCastle.Crypto.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
   <Import Project="$(MSBuildExtensionsPath)\Microsoft\WindowsXaml\v$(VisualStudioVersion)\Microsoft.Windows.UI.Xaml.CSharp.targets" />
