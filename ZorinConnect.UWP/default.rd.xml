@@ -3,6 +3,7 @@
   <Application>
     <Assembly Name="ZorinConnect" Dynamic="Required All" Serialize="Required All" />
     <Assembly Name="Newtonsoft.Json" Dynamic="Required All" />
+    <Assembly Name="BouncyCastle.Crypto" Dynamic="Required All" />
     <Namespace Name="System" Serialize="Required All" />
     <Namespace Name="System.Linq" Serialize="Required All" />
     <Namespace Name="System.Collections.ObjectModel" Serialize="Required All" />

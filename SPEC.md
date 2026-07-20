@@ -68,9 +68,9 @@ V20: protocolVersion + capabilities ⊥ persisted across app restarts (re-learne
 
 id|status|task|cites
 T1|x|scaffold: UWP C# sln, ARM, 16299/min15063, csproj cloned from PocketTavern.UWP pattern (ToolsVersion 15, PackageReference, UWP 6.1.9, Newtonsoft 13.0.3), appx self-sign, VM build script Z:\zorinconnect\build.bat, WDP deploy script (clone revenant_deploy.py pattern)|C
-T3|.|NetworkPacket: JSON model, serialize/deserialize per §I.packet, caps, payload fields|V12,V5
-T4|.|identity/settings core: deviceId gen+store, name (default = device model, filter), EC keypair + self-signed cert via BC (settles Portable.BouncyCastle vs 1.8.1 PCL fallback on first device deploy), LocalSettings layout §I.storage|V11
-T5|.|UDP discovery: DatagramSocket listener 1716 + broadcaster (bcast + custom hosts unicast), identity+tcpPort, rate limits|V5,V6
+T3|~|NetworkPacket: JSON model, serialize/deserialize per §I.packet, caps, payload fields|V12,V5
+T4|~|identity/settings core: deviceId gen+store, name (default = device model, filter), EC keypair + self-signed cert via BC (settles Portable.BouncyCastle vs 1.8.1 PCL fallback on first device deploy), LocalSettings layout §I.storage|V11
+T5|~|UDP discovery: DatagramSocket listener 1716 + broadcaster (bcast + custom hosts unicast), identity+tcpPort, rate limits|V5,V6
 T6|.|TCP: StreamSocketListener 1716..1764 + outbound connect on UDP identity recv, plaintext identity bootstrap both directions|V4
 T7|.|BC TLS wrapper: TlsServerProtocol/TlsClientProtocol over StreamSocket streams, role rule, pin/trust-all modes, client-cert req, peer-cert capture, 10s timeouts, v8 encrypted identity re-exchange|V2,V3,V4
 T8|.|Device+Link layer: device registry (ConcurrentDict), links priority list, reachable/paired axes, send queue, read loop, packet dispatch to plugins, DeviceStats(24h mem)|V15,V20

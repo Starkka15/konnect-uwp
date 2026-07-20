@@ -3,54 +3,77 @@ using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using ZorinConnect.Core;
 
 namespace ZorinConnect
 {
     sealed partial class App : Application
     {
-        private static Exception _startupException;
-
         public App()
         {
+            StartupTrace.Mark("app-ctor");
             this.UnhandledException += OnUnhandledException;
             try
             {
                 this.InitializeComponent();
                 this.Suspending += OnSuspending;
+                StartupTrace.Mark("app-ctor-done");
             }
             catch (Exception ex)
             {
-                _startupException = ex;
+                StartupTrace.MarkError("app-ctor", ex);
             }
         }
 
-        private async void OnUnhandledException(object sender, Windows.UI.Xaml.UnhandledExceptionEventArgs e)
+        private void OnUnhandledException(object sender, Windows.UI.Xaml.UnhandledExceptionEventArgs e)
         {
+            StartupTrace.MarkError("unhandled", e.Exception ?? new Exception(e.Message));
             e.Handled = true;
-            var dialog = new Windows.UI.Popups.MessageDialog(e.Exception?.ToString() ?? e.Message, "Unhandled Error");
-            await dialog.ShowAsync();
+            ShowFatal(e.Exception?.ToString() ?? e.Message);
         }
 
-        protected override async void OnLaunched(LaunchActivatedEventArgs e)
+        protected override void OnLaunched(LaunchActivatedEventArgs e)
         {
-            var rootFrame = Window.Current.Content as Frame;
-            if (rootFrame == null)
+            StartupTrace.Mark("launch");
+            try
             {
-                rootFrame = new Frame();
-                Window.Current.Content = rootFrame;
+                var rootFrame = Window.Current.Content as Frame;
+                if (rootFrame == null)
+                {
+                    rootFrame = new Frame();
+                    Window.Current.Content = rootFrame;
+                }
+                if (rootFrame.Content == null)
+                {
+                    rootFrame.Navigate(typeof(MainPage), e.Arguments);
+                }
+                Window.Current.Activate();
+                StartupTrace.Mark("launch-done");
             }
+            catch (Exception ex)
+            {
+                StartupTrace.MarkError("launch", ex);
+                ShowFatal(ex.ToString());
+            }
+        }
 
-            if (_startupException != null)
+        private static void ShowFatal(string text)
+        {
+            try
             {
-                var dialog = new Windows.UI.Popups.MessageDialog(_startupException.ToString(), "Startup Error");
-                await dialog.ShowAsync();
+                Window.Current.Content = new ScrollViewer
+                {
+                    Content = new TextBlock
+                    {
+                        Text = "FATAL:\n" + text + "\n\nprev run: " + StartupTrace.PreviousRun(),
+                        TextWrapping = TextWrapping.Wrap,
+                        FontSize = 11,
+                        Margin = new Thickness(8),
+                    }
+                };
+                Window.Current.Activate();
             }
-
-            if (rootFrame.Content == null)
-            {
-                rootFrame.Navigate(typeof(MainPage), e.Arguments);
-            }
-            Window.Current.Activate();
+            catch { }
         }
 
         private void OnSuspending(object sender, SuspendingEventArgs e)

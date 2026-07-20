@@ -4,11 +4,25 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
 
-    <Grid>
-        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-            <TextBlock Text="Zorin Connect" FontSize="28" HorizontalAlignment="Center" />
-            <TextBlock x:Name="StatusText" Text="Scaffold build — protocol core lands in T3+"
-                       FontSize="14" Opacity="0.7" HorizontalAlignment="Center" Margin="0,8,0,0" />
-        </StackPanel>
+    <Grid Padding="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="200" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" x:Name="OwnNameText" FontSize="22" />
+        <TextBlock Grid.Row="1" x:Name="OwnIdText" FontSize="11" Opacity="0.6" TextWrapping="Wrap" Margin="0,2,0,8" />
+
+        <Button Grid.Row="2" x:Name="RefreshButton" Content="Refresh" Click="OnRefreshClick" Margin="0,0,0,8" />
+
+        <ListView Grid.Row="3" x:Name="DeviceList" SelectionMode="None" />
+
+        <ScrollViewer Grid.Row="4" x:Name="LogScroll" Margin="0,8,0,0"
+                      Background="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}">
+            <TextBlock x:Name="LogText" FontSize="10" FontFamily="Consolas" TextWrapping="Wrap" Padding="6" />
+        </ScrollViewer>
     </Grid>
 </Page>

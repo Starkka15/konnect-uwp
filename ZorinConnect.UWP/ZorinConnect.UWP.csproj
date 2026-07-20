@@ -113,6 +113,11 @@
     <PackageReference Include="Newtonsoft.Json">
       <Version>13.0.3</Version>
     </PackageReference>
+    <!-- SPEC §C: only new dep vs baseline — TLS server role + cert gen.
+         1.9.0 is netstandard2.0-only (NU1202 vs uap10.0.15063); 1.8.1.4 ships netstandard1.3. -->
+    <PackageReference Include="Portable.BouncyCastle">
+      <Version>1.8.1.4</Version>
+    </PackageReference>
   </ItemGroup>
 
   <Import Project="$(MSBuildExtensionsPath)\Microsoft\WindowsXaml\v$(VisualStudioVersion)\Microsoft.Windows.UI.Xaml.CSharp.targets" />
