@@ -15,6 +15,7 @@ namespace ZorinConnect.Plugins
         private static readonly List<Func<IPlugin>> Factories = new List<Func<IPlugin>>
         {
             () => new PingPlugin(),
+            () => new BatteryPlugin(),
         };
 
         public static IEnumerable<IPlugin> CreateAll() => Factories.Select(f => f());
