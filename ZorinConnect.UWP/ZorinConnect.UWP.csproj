@@ -95,6 +95,7 @@
     <Content Include="Assets\Square44x44Logo.png" />
     <Content Include="Assets\Wide310x150Logo.png" />
     <Content Include="Assets\SplashScreen.png" />
+    <Content Include="Assets\findmyphone.wav" />
     <AppxManifest Include="Package.appxmanifest">
       <SubType>Designer</SubType>
     </AppxManifest>

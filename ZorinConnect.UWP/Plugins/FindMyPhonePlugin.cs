@@ -82,8 +82,9 @@ namespace ZorinConnect.Plugins
                     AudioCategory = MediaPlayerAudioCategory.Alerts,
                     Volume = 1.0,
                 };
+                // Bundled alarm WAV — MediaPlayer can't play the ms-winsoundevent: scheme.
                 _player.Source = MediaSource.CreateFromUri(
-                    new Uri("ms-winsoundevent:Notification.Looping.Alarm"));
+                    new Uri("ms-appx:///Assets/findmyphone.wav"));
                 _player.Play();
             }
             catch (Exception e) { _ctx?.Log?.Invoke($"ring audio failed: {e.Message}"); }
