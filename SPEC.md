@@ -76,7 +76,7 @@ T5|~|UDP discovery: DatagramSocket listener 1716 + broadcaster (bcast + custom h
 T6|.|TCP: StreamSocketListener 1716..1764 + outbound connect on UDP identity recv, plaintext identity bootstrap both directions|V4
 T7|.|BC TLS wrapper: TlsServerProtocol/TlsClientProtocol over StreamSocket streams, role rule, pin/trust-all modes, client-cert req, peer-cert capture, 10s timeouts, v8 encrypted identity re-exchange|V2,V3,V4
 T8|.|Device+Link layer: device registry (ConcurrentDict), links priority list, reachable/paired axes, send queue, read loop, packet dispatch to plugins, DeviceStats(24h mem)|V15,V20
-T9|~|PairingHandler: v8 state machine, timestamps, verify-key, timeouts, accept/reject, TOFU persist, unpair|V7,V8,V9,V18
+T9|x|PairingHandler: v8 state machine, timestamps, verify-key, timeouts, accept/reject, TOFU persist, unpair|V7,V8,V9,V18
 T10|.|plugin framework: IPlugin (onCreate/onDestroy/onPacket, supported/outgoing types, enabledByDefault, per-device settings, req/opt permission gates), factory registry, capability intersection loading|V10
 T11|.|payload channel: sender ServerSocket 1739..1764 + TLS, receiver connect, progress, cancel|V2,V16
 T12|.|mDNS: Dnssd announce (instance=deviceId) + DeviceWatcher browse → unicast identity reply|V19
