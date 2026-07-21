@@ -21,6 +21,7 @@ namespace ZorinConnect.Plugins
             () => new ClipboardPlugin(),
             () => new SharePlugin(),
             () => new RemoteInputPlugin(),
+            () => new SmsPlugin(),
         };
 
         public static IEnumerable<IPlugin> CreateAll() => Factories.Select(f => f());
