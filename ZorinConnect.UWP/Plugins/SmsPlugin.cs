@@ -25,8 +25,6 @@ namespace ZorinConnect.Plugins
         private const string TypeRequestConversation = "kdeconnect.sms.request_conversation";
         private const string TypeRequestAttachment = "kdeconnect.sms.request_attachment";
 
-        private const int MaxMessagesPerThread = 200;
-
         private PluginContext _ctx;
         private ChatMessageStore _store;
         private bool _haveRequested;
@@ -89,16 +87,11 @@ namespace ZorinConnect.Plugins
             _haveRequested = true;
             try
             {
-                // Proactively PUSH each conversation's full (capped) history as its own single-thread
-                // packet. GSConnect's _handleThread caches every message per thread, so both the list
-                // AND the scrollback populate without relying on GSConnect to request_conversation
-                // (which it doesn't do reliably). Robust: reads via the conversation's message reader
-                // (not MostRecentMessageId, which fails for some threads -> "skipped conversations").
-                var sentThreads = new HashSet<long>();
-                int nconv = 0, nskip = 0;
-
-                // 1) Conversations the store lists directly.
+                // ONE digest packet with the newest message of EVERY thread. GSConnect treats a
+                // packet with multiple thread_ids as a digest (-> requests each full conversation);
+                // separate single-message packets are misread as one-message threads (no history).
                 var reader = _store.GetConversationReader();
+                var digest = new JArray();
                 while (true)
                 {
                     var batch = await reader.ReadBatchAsync();
@@ -107,22 +100,16 @@ namespace ZorinConnect.Plugins
                     {
                         try
                         {
+                            var msg = await _store.GetMessageAsync(conv.MostRecentMessageId);
+                            if (msg == null) continue;
                             Remember(conv.Id);
-                            var arr = await ReadThreadAsync(conv, MaxMessagesPerThread);
-                            if (arr.Count == 0) { nskip++; continue; }
-                            SendMessagesPacket(arr);
-                            sentThreads.Add(ThreadId(conv.Id));
-                            nconv++;
+                            digest.Add(MessageToJson(msg, conv));
                         }
-                        catch (Exception ce) { nskip++; StartupTrace.Mark($"sms-conv-skip:{Trunc(ce.Message)}"); }
+                        catch { }
                     }
                 }
-
-                // 2) Catch-all: some threads (e.g. certain contacts) are missing from the conversation
-                // reader. Sweep recent messages, group by conversation id, and push any thread not
-                // already sent. This recovers the "skipped" conversations.
-                int extra = await SweepOrphanThreadsAsync(sentThreads);
-                StartupTrace.Mark($"sms-convs-sent:{nconv} skip:{nskip} extra:{extra}");
+                StartupTrace.Mark($"sms-convs-sent:{digest.Count}");
+                SendMessagesPacket(digest);
             }
             catch (Exception e) { _ctx?.Log?.Invoke($"sms conversations failed: {e.Message}"); }
         }
@@ -238,63 +225,6 @@ namespace ZorinConnect.Plugins
 
         // ---- helpers ----
 
-        /// <summary>
-        /// Sweep recent messages grouped by conversation id and push any thread the conversation
-        /// reader missed (recovers "skipped" conversations that GetConversationReader omits).
-        /// </summary>
-        private async Task<int> SweepOrphanThreadsAsync(HashSet<long> alreadySent)
-        {
-            var groups = new Dictionary<string, JArray>();
-            try
-            {
-                var mr = _store.GetMessageReader();
-                int scanned = 0;
-                const int scanCap = 6000;
-                while (scanned < scanCap)
-                {
-                    var batch = await mr.ReadBatchAsync();
-                    if (batch == null || batch.Count == 0) break;
-                    foreach (var m in batch)
-                    {
-                        scanned++;
-                        var convId = m.ThreadingInfo?.ConversationId;
-                        if (string.IsNullOrEmpty(convId)) continue;
-                        if (alreadySent.Contains(ThreadId(convId))) continue;
-                        if (!groups.TryGetValue(convId, out var arr)) { arr = new JArray(); groups[convId] = arr; }
-                        if (arr.Count < MaxMessagesPerThread) arr.Add(MessageToJson(m, null));
-                    }
-                }
-            }
-            catch (Exception e) { StartupTrace.Mark($"sms-sweep-err:{Trunc(e.Message)}"); }
-
-            int extra = 0;
-            foreach (var kv in groups)
-            {
-                Remember(kv.Key);
-                SendMessagesPacket(kv.Value);
-                extra++;
-            }
-            return extra;
-        }
-
-        /// <summary>Read up to <paramref name="limit"/> most-recent messages of a conversation.</summary>
-        private async Task<JArray> ReadThreadAsync(ChatConversation conv, int limit)
-        {
-            var arr = new JArray();
-            var reader = conv.GetMessageReader();
-            while (arr.Count < limit)
-            {
-                var batch = await reader.ReadBatchAsync();
-                if (batch == null || batch.Count == 0) break;
-                foreach (var m in batch)
-                {
-                    arr.Add(MessageToJson(m, conv));
-                    if (arr.Count >= limit) break;
-                }
-            }
-            return arr;
-        }
-
         private void SendMessagesPacket(JArray messages)
         {
             if (messages == null || messages.Count == 0) return;
@@ -305,14 +235,10 @@ namespace ZorinConnect.Plugins
         private JObject MessageToJson(ChatMessage m, ChatConversation conv)
         {
             var addresses = new JArray();
-            // Prefer the conversation's real participant. Per-message From/Recipients can be the
-            // W10M placeholder "insert-address-token" (or empty), which GSConnect splices out ->
-            // a thread whose first message loses its address is DROPPED entirely (skipped contacts).
-            string party = Valid(FirstParticipant(conv))
-                ?? Valid(m.From)
-                ?? (m.Recipients != null && m.Recipients.Count > 0 ? Valid(m.Recipients[0]) : null)
-                ?? "unknown";
-            addresses.Add(new JObject { ["address"] = party });
+            string party = m.IsIncoming
+                ? (string.IsNullOrEmpty(m.From) ? FirstParticipant(conv) : m.From)
+                : (m.Recipients != null && m.Recipients.Count > 0 ? m.Recipients[0] : FirstParticipant(conv));
+            addresses.Add(new JObject { ["address"] = party ?? "" });
 
             var convId = m.ThreadingInfo?.ConversationId ?? conv?.Id;
             return new JObject
@@ -331,17 +257,8 @@ namespace ZorinConnect.Plugins
 
         private static string FirstParticipant(ChatConversation conv)
         {
-            if (conv?.Participants != null)
-                foreach (var p in conv.Participants) { var v = Valid(p); if (v != null) return v; }
-            return null;
-        }
-
-        /// <summary>Return the trimmed address, or null if empty or the W10M "insert-address-token" placeholder.</summary>
-        private static string Valid(string addr)
-        {
-            if (string.IsNullOrWhiteSpace(addr)) return null;
-            var t = addr.Trim();
-            return t == "insert-address-token" ? null : t;
+            if (conv?.Participants != null && conv.Participants.Count > 0) return conv.Participants[0];
+            return "";
         }
 
         private void Remember(string convId)

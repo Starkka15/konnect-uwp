@@ -22,6 +22,7 @@ namespace ZorinConnect.Plugins
             () => new SharePlugin(),
             () => new RemoteInputPlugin(),
             () => new SmsPlugin(),
+            () => new NotificationsPlugin(),
         };
 
         public static IEnumerable<IPlugin> CreateAll() => Factories.Select(f => f());
