@@ -107,10 +107,9 @@ namespace ZorinConnect.Plugins
                         return;
                     }
                 }
-                var loc = LibraryLabel(filename) + "\\" + ReceivedFolderName;
                 StartupTrace.Mark($"share-saved:{folder.Name}");
-                _ctx?.Log?.Invoke($"share: saved {folder.Name} -> {loc}");
-                FinishProgressToast(tag, $"{folder.Name}  ({loc})", true, seq);
+                _ctx?.Log?.Invoke($"share: saved {folder.Name} -> {ReceivedLocationLabel}");
+                FinishProgressToast(tag, $"{folder.Name}  ({ReceivedLocationLabel})", true, seq);
 
                 if (np.GetBool("open"))
                     await Launcher.LaunchFileAsync(folder);
@@ -157,36 +156,16 @@ namespace ZorinConnect.Plugins
         }
 
         private const string ProgressGroup = "zc-share";
-        private const string ReceivedFolderName = "Zorin Connect";
+        // ONE place for everything (like Android's Downloads). W10M's DownloadsFolder isn't shown
+        // by the Files app, and documentsLibrary can't take arbitrary file types, so we use a single
+        // "Zorin Connect" folder in the Pictures library — always present and browsable in Files.
+        private const string ReceivedLocationLabel = "Pictures\\Zorin Connect";
 
-        /// <summary>
-        /// Pick a browsable library by file type and return its "Zorin Connect" subfolder. W10M's
-        /// DownloadsFolder is not surfaced by the Files app, so we route to Pictures/Music/Videos
-        /// (which are). Non-media falls back to Pictures (always present + browsable).
-        /// </summary>
         private static async Task<StorageFolder> TargetFolderAsync(string filename)
         {
-            var ext = System.IO.Path.GetExtension(filename ?? "").ToLowerInvariant();
-            StorageFolder lib;
-            if (IsAudio(ext)) lib = KnownFolders.MusicLibrary;
-            else if (IsVideo(ext)) lib = KnownFolders.VideosLibrary;
-            else if (IsImage(ext)) lib = KnownFolders.PicturesLibrary;
-            else lib = KnownFolders.PicturesLibrary; // catch-all (browsable)
-            try { return await lib.CreateFolderAsync(ReceivedFolderName, CreationCollisionOption.OpenIfExists); }
-            catch { return lib; }
+            try { return await KnownFolders.PicturesLibrary.CreateFolderAsync("Zorin Connect", CreationCollisionOption.OpenIfExists); }
+            catch { return KnownFolders.PicturesLibrary; }
         }
-
-        private static string LibraryLabel(string filename)
-        {
-            var e = System.IO.Path.GetExtension(filename ?? "").ToLowerInvariant();
-            if (IsAudio(e)) return "Music";
-            if (IsVideo(e)) return "Videos";
-            return "Pictures";
-        }
-
-        private static bool IsAudio(string e) => e == ".wav" || e == ".mp3" || e == ".flac" || e == ".m4a" || e == ".aac" || e == ".ogg" || e == ".wma";
-        private static bool IsVideo(string e) => e == ".mp4" || e == ".mkv" || e == ".avi" || e == ".mov" || e == ".wmv" || e == ".webm" || e == ".m4v";
-        private static bool IsImage(string e) => e == ".jpg" || e == ".jpeg" || e == ".png" || e == ".gif" || e == ".bmp" || e == ".webp" || e == ".heic";
 
         private void ShowProgressToast(string tag, string filename)
         {
