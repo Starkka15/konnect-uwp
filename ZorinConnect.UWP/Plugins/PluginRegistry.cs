@@ -20,6 +20,7 @@ namespace ZorinConnect.Plugins
             () => new ConnectivityReportPlugin(),
             () => new ClipboardPlugin(),
             () => new SharePlugin(),
+            () => new RemoteInputPlugin(),
         };
 
         public static IEnumerable<IPlugin> CreateAll() => Factories.Select(f => f());
