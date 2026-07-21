@@ -58,14 +58,24 @@ namespace ZorinConnect.Core
 
             // Always-on: register the socket-activity background task + arm the discovery sockets
             // for standby wake (§T29/T30).
-            await BackgroundManager.EnsureRegisteredAsync();
-            if (BackgroundManager.Registered)
-                Lan.EnableBackgroundWake(BackgroundManager.SocketTaskId);
+            // DISABLED (§B2): the wake handler rebroadcasts, which makes the desktop reconnect,
+            // which closes the socket -> SocketClosed wake -> rebroadcast -> RECONNECT STORM
+            // (1776 handshakes/run, broke the desktop mousepad plugin). Keep only ExtendedExecution
+            // (ExecutionGuard) for always-on-while-resident until T30 is redone loop-free.
+            if (EnableSocketActivity)
+            {
+                await BackgroundManager.EnsureRegisteredAsync();
+                if (BackgroundManager.Registered)
+                    Lan.EnableBackgroundWake(BackgroundManager.SocketTaskId);
+            }
         }
 
-        public void OnSuspending() => Lan.TransferToBroker();
+        /// <summary>§B2: socket-activity background wake disabled until the rebroadcast loop is fixed.</summary>
+        public static bool EnableSocketActivity = false;
 
-        public Task OnResumingAsync() => Lan.ReclaimAndRestartAsync();
+        public void OnSuspending() { if (EnableSocketActivity) Lan.TransferToBroker(); }
+
+        public Task OnResumingAsync() => EnableSocketActivity ? Lan.ReclaimAndRestartAsync() : Task.CompletedTask;
 
         public Task HandleSocketActivityAsync(Windows.Networking.Sockets.SocketActivityTriggerDetails d)
             => Lan.HandleSocketActivityAsync(d);
