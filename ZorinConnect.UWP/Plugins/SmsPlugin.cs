@@ -70,8 +70,8 @@ namespace ZorinConnect.Plugins
         {
             switch (np.Type)
             {
-                case TypeRequestConversations: var _ = SendConversationsAsync(); return true;
-                case TypeRequestConversation: var __ = SendConversationAsync(np); return true;
+                case TypeRequestConversations: StartupTrace.Mark("sms-req-convs"); var _ = SendConversationsAsync(); return true;
+                case TypeRequestConversation: StartupTrace.Mark($"sms-req-conv:{np.GetLong("threadID")}"); var __ = SendConversationAsync(np); return true;
                 case TypeRequest: var ___ = SendSmsAsync(np); return true;
                 case TypeRequestAttachment: return true; // MMS attachments: TODO
                 default: return false;
@@ -87,7 +87,11 @@ namespace ZorinConnect.Plugins
             _haveRequested = true;
             try
             {
+                // ONE digest packet with the newest message of EVERY thread. GSConnect treats a
+                // packet with multiple thread_ids as a digest (-> requests each full conversation);
+                // separate single-message packets are misread as one-message threads (no history).
                 var reader = _store.GetConversationReader();
+                var digest = new JArray();
                 while (true)
                 {
                     var batch = await reader.ReadBatchAsync();
@@ -99,11 +103,13 @@ namespace ZorinConnect.Plugins
                             var msg = await _store.GetMessageAsync(conv.MostRecentMessageId);
                             if (msg == null) continue;
                             Remember(conv.Id);
-                            SendMessagesPacket(new JArray { MessageToJson(msg, conv) });
+                            digest.Add(MessageToJson(msg, conv));
                         }
                         catch { }
                     }
                 }
+                StartupTrace.Mark($"sms-convs-sent:{digest.Count}");
+                SendMessagesPacket(digest);
             }
             catch (Exception e) { _ctx?.Log?.Invoke($"sms conversations failed: {e.Message}"); }
         }
@@ -122,7 +128,7 @@ namespace ZorinConnect.Plugins
             try
             {
                 var conv = await _store.GetConversationAsync(convId);
-                if (conv == null) return;
+                if (conv == null) { StartupTrace.Mark($"sms-conv-notfound:{convId}"); return; }
                 var reader = conv.GetMessageReader();
                 var arr = new JArray();
                 int count = 0;
@@ -139,9 +145,10 @@ namespace ZorinConnect.Plugins
                     }
                     if (limit > 0 && count >= limit) break;
                 }
+                StartupTrace.Mark($"sms-conv-sent:{arr.Count}");
                 SendMessagesPacket(arr);
             }
-            catch (Exception e) { _ctx?.Log?.Invoke($"sms conversation failed: {e.Message}"); }
+            catch (Exception e) { StartupTrace.MarkError("sms-conv", e); _ctx?.Log?.Invoke($"sms conversation failed: {e.Message}"); }
         }
 
         // ---- live updates ----
@@ -194,15 +201,26 @@ namespace ZorinConnect.Plugins
             if (recipients.Count == 0 && np.Has("phoneNumber")) recipients.Add(np.GetString("phoneNumber"));
             if (recipients.Count == 0) return;
 
+            // Silent send via SmsDevice2. On W10M this is privileged (OEM/carrier/default-messaging
+            // app only) -> access-denied for a sideloaded app. No composer popup (bad UX); just log.
             try
             {
                 var dev = Windows.Devices.Sms.SmsDevice2.GetDefault();
-                if (dev == null) { _ctx?.Log?.Invoke("sms send: no SMS device"); return; }
-                var msg = new Windows.Devices.Sms.SmsTextMessage2 { Body = body, To = recipients[0] };
-                await dev.SendMessageAndGetResultAsync(msg);
-                _ctx?.Log?.Invoke($"sms sent to {recipients[0]}");
+                if (dev != null)
+                {
+                    var msg = new Windows.Devices.Sms.SmsTextMessage2 { Body = body, To = recipients[0] };
+                    await dev.SendMessageAndGetResultAsync(msg);
+                    StartupTrace.Mark("sms-sent");
+                    _ctx?.Log?.Invoke($"sms sent to {recipients[0]}");
+                    return;
+                }
+                _ctx?.Log?.Invoke("sms send: no SMS device");
             }
-            catch (Exception e) { _ctx?.Log?.Invoke($"sms send failed: {e.Message}"); }
+            catch (Exception e)
+            {
+                StartupTrace.Mark($"sms-send-fail:{Trunc(e.Message)}");
+                _ctx?.Log?.Invoke($"sms send failed (W10M restricts SMS send to privileged apps): {e.Message}");
+            }
         }
 
         // ---- helpers ----
@@ -250,6 +268,8 @@ namespace ZorinConnect.Plugins
         }
 
         private long ThreadId(string convId) => convId == null ? 0 : StableHash(convId);
+
+        private static string Trunc(string s) => s == null ? "" : (s.Length > 60 ? s.Substring(0, 60) : s);
 
         /// <summary>
         /// Stable positive hash of a string (FNV-1a), masked to 53 bits. GSConnect is JavaScript
