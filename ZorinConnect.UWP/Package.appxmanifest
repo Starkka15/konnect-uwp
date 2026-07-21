@@ -42,6 +42,7 @@
     <rescap:Capability Name="chatSystem" />
     <rescap:Capability Name="phoneCallHistorySystem" />
     <rescap:Capability Name="inputInjectionBrokered" />
+    <rescap:Capability Name="smsSend" />
     <DeviceCapability Name="phoneCall" />
   </Capabilities>
 </Package>

@@ -251,13 +251,17 @@ namespace ZorinConnect.Plugins
 
         private long ThreadId(string convId) => convId == null ? 0 : StableHash(convId);
 
-        /// <summary>Stable positive 63-bit hash of a string (FNV-1a) for numeric thread/message ids.</summary>
+        /// <summary>
+        /// Stable positive hash of a string (FNV-1a), masked to 53 bits. GSConnect is JavaScript
+        /// (float64), which only holds integers exactly up to 2^53 — a wider value gets rounded and
+        /// the round-tripped threadID no longer matches our map (full history never loads).
+        /// </summary>
         private static long StableHash(string s)
         {
             if (string.IsNullOrEmpty(s)) return 0;
             ulong h = 1469598103934665603UL;
             foreach (var c in s) { h ^= c; h *= 1099511628211UL; }
-            return (long)(h & 0x7FFFFFFFFFFFFFFFUL);
+            return (long)(h & 0x1FFFFFFFFFFFFFUL); // 53 bits
         }
     }
 }
