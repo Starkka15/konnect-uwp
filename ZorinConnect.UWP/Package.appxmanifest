@@ -2,7 +2,8 @@
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
          xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
          xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
-         IgnorableNamespaces="uap mp">
+         xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+         IgnorableNamespaces="uap mp rescap">
   <Identity Name="ZorinConnect.W10M" Publisher="CN=Developer" Version="0.1.0.0" />
   <mp:PhoneIdentity PhoneProductId="4A7D20B9-8E31-4C55-A2F0-6B9D51C83E72" PhonePublisherId="00000000-0000-0000-0000-000000000000" />
   <Properties>
@@ -33,5 +34,14 @@
     <Capability Name="internetClientServer" />
     <Capability Name="privateNetworkClientServer" />
     <uap:Capability Name="musicLibrary" />
+    <uap:Capability Name="picturesLibrary" />
+    <uap:Capability Name="videosLibrary" />
+    <uap:Capability Name="contacts" />
+    <!-- RESCAP PROBE (T31): does the sideloaded 640XL honor these? (DeviceCapability must be last) -->
+    <uap:Capability Name="chat" />
+    <rescap:Capability Name="chatSystem" />
+    <rescap:Capability Name="phoneCallHistorySystem" />
+    <rescap:Capability Name="inputInjectionBrokered" />
+    <DeviceCapability Name="phoneCall" />
   </Capabilities>
 </Package>

@@ -36,6 +36,7 @@ namespace ZorinConnect
             try
             {
                 await Helpers.DeviceInfoProbe.ProbeAsync(); // diagnostic: log all device-info sources
+                var _probe = RescapProbe.RunAsync();        // T31: fire-and-forget so a hang can't wedge startup
                 StartupTrace.Mark("core-start");
                 await core.StartAsync();
                 StartupTrace.Mark("core-started");
