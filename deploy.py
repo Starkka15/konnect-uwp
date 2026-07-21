@@ -9,10 +9,19 @@ urllib3.disable_warnings()
 # Defaults = 640 XL (daily). Override for the 1520 or drifted IP via env:
 #   ZC_HOST=https://192.168.4.245 ZC_WMID=<wmid> python3 deploy.py
 HOST = os.environ.get("ZC_HOST", "https://192.168.5.17")
-WMID = os.environ.get("ZC_WMID", "3833765007940722240809168817185100068099660988657185202370593716")
-# Identity Name=ZorinConnect.W10M, Publisher CN=Developer -> hash 1b7q5sa4bwdpa (computed, algo verified vs 8wekyb3d8bbwe)
-PFAM = "ZorinConnect.W10M"  # PackageFamilyName as reported by WDP (version-independent)
-PRAID = "ZorinConnect.W10M_1b7q5sa4bwdpa!App"  # PackageRelativeId (includes publisher hash)
+# WDP pairing cookie is device-specific + rotates — kept OUT of the repo. Source order:
+#   $ZC_WMID  ->  a local (gitignored) ".wmid" file next to this script.
+WMID = os.environ.get("ZC_WMID", "")
+if not WMID:
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".wmid")) as _f:
+            WMID = _f.read().strip()
+    except OSError:
+        pass
+# Identity Name=Konnect.UWP, Publisher CN=Developer -> hash 1b7q5sa4bwdpa (unchanged: hash derives
+# from Publisher only, and Publisher is still CN=Developer)
+PFAM = "Konnect.UWP"  # PackageFamilyName as reported by WDP (version-independent)
+PRAID = "Konnect.UWP_1b7q5sa4bwdpa!App"  # PackageRelativeId (includes publisher hash)
 APPX = "/mnt/ssd-raid/vm-shared/zorinconnect/ZorinConnect_ARM.appx"
 
 s = requests.Session()
@@ -28,13 +37,28 @@ def csrf():
 def hdrs(tok):
     return {"X-CSRF-Token": tok, "CSRF-Token": tok}
 
-def installed_pfn():
-    """Current PackageFullName for our family (version bumps each build)."""
+def installed_pkg():
+    """(PackageFullName, PackageFamilyName) for our app, matched by family-name prefix so the real
+    publisher hash reported by WDP is used even if our guess differs. (None, None) if not installed."""
     r = s.get(f"{HOST}/api/app/packagemanager/packages", timeout=15)
     for p in r.json().get("InstalledPackages", []):
-        if p.get("PackageFamilyName") == PFAM:
-            return p.get("PackageFullName")
-    return None
+        fam = p.get("PackageFamilyName", "")
+        if fam == PFAM or fam.startswith(PFAM + "_"):
+            return p.get("PackageFullName"), fam
+    return None, None
+
+def installed_pfn():
+    return installed_pkg()[0]
+
+def uninstall_family(prefix, tok):
+    """Remove any installed package whose family starts with `prefix` (e.g. the old Zorin package)."""
+    r = s.get(f"{HOST}/api/app/packagemanager/packages", timeout=15)
+    for p in r.json().get("InstalledPackages", []):
+        if p.get("PackageFamilyName", "").startswith(prefix):
+            pfn = p.get("PackageFullName")
+            print(f"Uninstalling old package {pfn}...")
+            s.delete(f"{HOST}/api/app/packagemanager/package?package={pfn}", headers=hdrs(tok), timeout=60)
+            time.sleep(3)
 
 def main():
     launch_only = "--launch-only" in sys.argv
@@ -42,6 +66,9 @@ def main():
     print(f"CSRF={tok}")
 
     if not launch_only:
+        # One-time: remove the old Zorin-identity package now that identity is Konnect.UWP.
+        uninstall_family("ZorinConnect.W10M_", tok); tok = csrf()
+
         # NO uninstall — install-over as a version update so the phone's ApplicationData
         # (deviceId/cert/pairing) survives. build.ps1 bumps the appx revision each build so WDP
         # accepts the update. Pass --clean to force a wipe+reinstall (fresh unpaired device).
@@ -76,10 +103,11 @@ def main():
                 print("INSTALL ERROR"); sys.exit(1)
 
     tok = csrf()
-    pfn = installed_pfn()
+    pfn, fam = installed_pkg()
     if not pfn:
         print("could not resolve installed package full name"); sys.exit(1)
-    appid_b64 = base64.b64encode(PRAID.encode()).decode()
+    praid = f"{fam}!App"   # derive from the real installed family name (correct hash guaranteed)
+    appid_b64 = base64.b64encode(praid.encode()).decode()
     pfn_b64 = base64.b64encode(pfn.encode()).decode()
     print(f"Launching {pfn}...")
     r = s.post(f"{HOST}/api/taskmanager/app?appid={appid_b64}&package={pfn_b64}",

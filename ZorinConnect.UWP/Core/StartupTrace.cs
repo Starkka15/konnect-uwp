@@ -27,7 +27,8 @@ namespace ZorinConnect.Core
                     settings.Values[KeyPrevious] = prev;
                     settings.Values[KeyCurrent] = "";
                     // LocalSettings writes are synchronous -> prev holds the dead run's FULL trace.
-                    MirrorToFile($"PREV-RUN-FULL=[{prev}]");
+                    // TRUNCATE the mirror file at each run start so it can't grow unbounded (was 50MB).
+                    MirrorToFile($"PREV-RUN-FULL=[{prev}]", truncate: true);
                 }
                 Buffer.Append(stage).Append(';');
                 if (Buffer.Length > 4000) Buffer.Remove(0, Buffer.Length - 4000); // cap: no unbounded growth
@@ -46,7 +47,7 @@ namespace ZorinConnect.Core
         /// </summary>
         private static readonly System.Threading.SemaphoreSlim FileLock = new System.Threading.SemaphoreSlim(1, 1);
 
-        private static void MirrorToFile(string content)
+        private static void MirrorToFile(string content, bool truncate = false)
         {
             var stamp = DateTime.Now.ToString("HH:mm:ss.fff");
             var _ = System.Threading.Tasks.Task.Run(async () =>
@@ -55,8 +56,10 @@ namespace ZorinConnect.Core
                 try
                 {
                     var file = await Windows.Storage.KnownFolders.MusicLibrary.CreateFileAsync(
-                        "zctrace.txt", CreationCollisionOption.OpenIfExists);
-                    await FileIO.AppendTextAsync(file, $"{stamp} {content}\n");
+                        "zctrace.txt", truncate ? CreationCollisionOption.ReplaceExisting
+                                               : CreationCollisionOption.OpenIfExists);
+                    if (truncate) await FileIO.WriteTextAsync(file, $"{stamp} {content}\n");
+                    else await FileIO.AppendTextAsync(file, $"{stamp} {content}\n");
                 }
                 catch { }
                 finally { FileLock.Release(); }

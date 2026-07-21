@@ -5,10 +5,10 @@
          xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
          xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
          IgnorableNamespaces="uap uap3 mp rescap">
-  <Identity Name="ZorinConnect.W10M" Publisher="CN=Developer" Version="0.1.0.0" />
+  <Identity Name="Konnect.UWP" Publisher="CN=Developer" Version="1.0.0.0" />
   <mp:PhoneIdentity PhoneProductId="4A7D20B9-8E31-4C55-A2F0-6B9D51C83E72" PhonePublisherId="00000000-0000-0000-0000-000000000000" />
   <Properties>
-    <DisplayName>Zorin Connect</DisplayName>
+    <DisplayName>Konnect UWP</DisplayName>
     <PublisherDisplayName>Starkka15</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
@@ -20,12 +20,12 @@
   </Resources>
   <Applications>
     <Application Id="App" Executable="$targetnametoken$.exe" EntryPoint="ZorinConnect.App">
-      <uap:VisualElements DisplayName="Zorin Connect"
+      <uap:VisualElements DisplayName="Konnect UWP"
                           Square150x150Logo="Assets\Square150x150Logo.png"
                           Square44x44Logo="Assets\Square44x44Logo.png"
-                          Description="KDE Connect for Windows 10 Mobile"
+                          Description="KDE Connect client for Windows 10 Mobile"
                           BackgroundColor="#15A6F0">
-        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" ShortName="Zorin Connect" />
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" ShortName="Konnect" />
         <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#15A6F0" />
       </uap:VisualElements>
     </Application>

@@ -28,7 +28,7 @@ namespace ZorinConnect.Plugins
             if (np.Type != PacketType) return false;
             var message = np.Has("message") ? np.GetString("message") : "Ping!";
             _ctx?.Log?.Invoke($"ping from {_ctx.Device.Name}: {message}");
-            ShowToast(_ctx?.Device?.Name ?? "Zorin Connect", message);
+            ShowToast(_ctx?.Device?.Name ?? "Konnect UWP", message);
             return true;
         }
 

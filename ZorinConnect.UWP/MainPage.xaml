@@ -9,6 +9,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="200" />
         </Grid.RowDefinitions>
@@ -27,16 +28,28 @@
             <TextBlock x:Name="SensValue" VerticalAlignment="Center" Margin="6,0,0,0" Opacity="0.7" />
         </StackPanel>
 
-        <ScrollViewer Grid.Row="3">
+        <StackPanel Grid.Row="3" Margin="0,0,0,8">
+            <Button x:Name="MainMountButton" Content="Give permission for Main"
+                    Click="OnGrantMain" HorizontalAlignment="Stretch" Margin="0,0,0,4" />
+            <Button x:Name="SdMountButton" Content="Give permission for SD Card"
+                    Click="OnGrantSdCard" HorizontalAlignment="Stretch" Margin="0,0,0,4" />
+            <StackPanel Orientation="Horizontal">
+                <Button x:Name="ShareFolderButton" Content="Save folder…" Click="OnPickShareFolder" />
+                <Button x:Name="ClearMountButton" Content="Clear mounts" Click="OnClearMountFolders" Margin="8,0,0,0" />
+            </StackPanel>
+            <TextBlock x:Name="StorageStatus" FontSize="11" Opacity="0.7" TextWrapping="Wrap" Margin="0,4,0,0" />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="4">
             <StackPanel x:Name="DevicePanel" />
         </ScrollViewer>
 
-        <ScrollViewer Grid.Row="4" x:Name="LogScroll" Margin="0,8,0,0"
+        <ScrollViewer Grid.Row="5" x:Name="LogScroll" Margin="0,8,0,0"
                       Background="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}">
             <TextBlock x:Name="LogText" FontSize="10" FontFamily="Consolas" TextWrapping="Wrap" Padding="6" />
         </ScrollViewer>
 
-        <Grid x:Name="RingOverlay" Grid.RowSpan="5" Background="#DD15A6F0" Visibility="Collapsed"
+        <Grid x:Name="RingOverlay" Grid.RowSpan="6" Background="#DD15A6F0" Visibility="Collapsed"
               Tapped="OnDismissRing">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                 <TextBlock Text="&#xE1D6;" FontFamily="Segoe MDL2 Assets" FontSize="72"

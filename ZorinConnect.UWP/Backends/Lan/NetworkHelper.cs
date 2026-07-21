@@ -13,6 +13,19 @@ namespace ZorinConnect.Backends.Lan
         /// W10M fast-fails on the limited broadcast 255.255.255.255; the directed broadcast is
         /// delivered normally and still reaches KDE Connect peers on the same subnet.
         /// </summary>
+        /// <summary>The phone's own IPv4 on the active adapter (for advertising the SFTP host).</summary>
+        public static string LocalIPv4()
+        {
+            foreach (var host in NetworkInformation.GetHostNames())
+            {
+                if (host.Type != HostNameType.Ipv4) continue;
+                if (host.IPInformation?.PrefixLength == null) continue;
+                int prefix = (int)host.IPInformation.PrefixLength.Value;
+                if (prefix > 0 && prefix < 32) return host.CanonicalName;
+            }
+            return null;
+        }
+
         public static List<string> BroadcastAddresses()
         {
             var result = new List<string>();

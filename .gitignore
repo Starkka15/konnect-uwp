@@ -1,0 +1,14 @@
+# Build output / signed package (attached to GitHub releases, not committed)
+*.appx
+*.appxsym
+*.appxbundle
+
+# MSBuild / VS intermediate
+[Bb]in/
+[Oo]bj/
+*.user
+
+# Local-only state (device WDP pairing cookie; install-over version counter; debug dumps)
+.wmid
+.build-rev
+cdb_output.txt

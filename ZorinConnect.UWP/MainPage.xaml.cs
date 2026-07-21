@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using Windows.UI.Core;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
@@ -44,6 +45,7 @@ namespace ZorinConnect
                 OwnIdText.Text = $"{DeviceHelper.DeviceId} · proto v{DeviceHelper.ProtocolVersion} · tcp {core.Lan.TcpPort}";
                 SensSlider.Value = Plugins.RemoteInputPlugin.Sensitivity;
                 SensValue.Text = $"{Plugins.RemoteInputPlugin.Sensitivity:0.0}x";
+                await UpdateStorageStatusAsync();
             }
             catch (Exception ex)
             {
@@ -160,6 +162,71 @@ namespace ZorinConnect
         {
             Plugins.RemoteInputPlugin.Sensitivity = e.NewValue;
             if (SensValue != null) SensValue.Text = $"{e.NewValue:0.0}x";
+        }
+
+        // ---- storage locations (FolderPicker -> FutureAccessList) ----
+
+        private static Windows.Storage.Pickers.FolderPicker MakeFolderPicker()
+        {
+            var picker = new Windows.Storage.Pickers.FolderPicker
+            {
+                SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.ComputerFolder,
+            };
+            picker.FileTypeFilter.Add("*"); // required or PickSingleFolderAsync throws
+            return picker;
+        }
+
+        private async void OnPickShareFolder(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var folder = await MakeFolderPicker().PickSingleFolderAsync();
+                if (folder == null) return;
+                StorageRoots.SetShareFolder(folder);
+                OnLog($"received files will save to: {folder.Path}");
+                await UpdateStorageStatusAsync();
+            }
+            catch (Exception ex) { OnLog($"pick save folder failed: {ex.Message}"); }
+        }
+
+        private async void OnGrantMain(object sender, RoutedEventArgs e) => await GrantMountAsync("Main");
+        private async void OnGrantSdCard(object sender, RoutedEventArgs e) => await GrantMountAsync("SD Card");
+
+        private async Task GrantMountAsync(string name)
+        {
+            try
+            {
+                var folder = await MakeFolderPicker().PickSingleFolderAsync();
+                if (folder == null) return;
+                StorageRoots.SetMountRoot(folder, name);   // fixed name = the button; not user-typed
+                OnLog($"'{name}' mount granted: {folder.Path}");
+                await UpdateStorageStatusAsync();
+            }
+            catch (Exception ex) { OnLog($"grant '{name}' failed: {ex.Message}"); }
+        }
+
+        private async void OnClearMountFolders(object sender, RoutedEventArgs e)
+        {
+            StorageRoots.ClearMountRoots();
+            OnLog("mount roots cleared (defaults to Pictures/Music/Videos)");
+            await UpdateStorageStatusAsync();
+        }
+
+        private async System.Threading.Tasks.Task UpdateStorageStatusAsync()
+        {
+            try
+            {
+                var share = await StorageRoots.GetShareFolderAsync();
+                var mounts = await StorageRoots.GetMountRootsAsync();
+                var shareText = share != null ? share.Path : "Pictures\\Konnect (default)";
+                string mountText;
+                if (mounts.Count == 0)
+                    mountText = "Pictures, Music, Videos (default)";
+                else
+                    mountText = string.Join(", ", mounts.Select(m => $"{m.Name} → {m.Folder.Name}"));
+                StorageStatus.Text = $"Save to: {shareText}\nMount exposes: {mountText}";
+            }
+            catch (Exception ex) { StorageStatus.Text = $"storage status error: {ex.Message}"; }
         }
     }
 }

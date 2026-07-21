@@ -70,10 +70,10 @@ namespace ZorinConnect.Plugins
                 if (stream == null) { StartupTrace.Mark("share-nopayload"); _ctx?.Log?.Invoke("share: no payload stream"); return; }
                 StartupTrace.Mark("share-payload-open");
 
-                // DownloadsFolder on W10M writes to an opaque location the Files app doesn't show.
-                // Save to a "Zorin Connect" folder inside the matching media library instead —
-                // those ARE browsable (Files app -> Pictures/Music/Videos).
+                // Prefer the folder the user picked (FolderPicker -> FutureAccessList). If none picked,
+                // fall back to a browsable library folder (DownloadsFolder is invisible to the Files app).
                 var destFolder = await TargetFolderAsync(filename);
+                string destLabel = DestLabel(destFolder);
                 var folder = await destFolder.CreateFileAsync(filename, CreationCollisionOption.GenerateUniqueName);
                 var tag = "zc-recv-" + Math.Abs(filename.GetHashCode());
                 ShowProgressToast(tag, filename);
@@ -108,8 +108,8 @@ namespace ZorinConnect.Plugins
                     }
                 }
                 StartupTrace.Mark($"share-saved:{folder.Name}");
-                _ctx?.Log?.Invoke($"share: saved {folder.Name} -> {ReceivedLocationLabel}");
-                FinishProgressToast(tag, $"{folder.Name}  ({ReceivedLocationLabel})", true, seq);
+                _ctx?.Log?.Invoke($"share: saved {folder.Name} -> {destLabel}");
+                FinishProgressToast(tag, $"{folder.Name}  ({destLabel})", true, seq);
 
                 if (np.GetBool("open"))
                     await Launcher.LaunchFileAsync(folder);
@@ -156,15 +156,25 @@ namespace ZorinConnect.Plugins
         }
 
         private const string ProgressGroup = "zc-share";
-        // ONE place for everything (like Android's Downloads). W10M's DownloadsFolder isn't shown
-        // by the Files app, and documentsLibrary can't take arbitrary file types, so we use a single
-        // "Zorin Connect" folder in the Pictures library — always present and browsable in Files.
-        private const string ReceivedLocationLabel = "Pictures\\Zorin Connect";
+        // Default (no folder picked yet): a single browsable folder in the Pictures library. W10M's
+        // DownloadsFolder isn't shown by the Files app and documentsLibrary can't take arbitrary types.
+        private const string DefaultFolderName = "Konnect";
+        private const string DefaultLocationLabel = "Pictures\\Konnect";
 
         private static async Task<StorageFolder> TargetFolderAsync(string filename)
         {
-            try { return await KnownFolders.PicturesLibrary.CreateFolderAsync("Zorin Connect", CreationCollisionOption.OpenIfExists); }
+            var picked = await StorageRoots.GetShareFolderAsync();
+            if (picked != null) return picked;
+            try { return await KnownFolders.PicturesLibrary.CreateFolderAsync(DefaultFolderName, CreationCollisionOption.OpenIfExists); }
             catch { return KnownFolders.PicturesLibrary; }
+        }
+
+        /// <summary>Friendly label for the save location shown in the toast/log.</summary>
+        private static string DestLabel(StorageFolder folder)
+        {
+            if (folder == null) return DefaultLocationLabel;
+            if (folder.Name == DefaultFolderName) return DefaultLocationLabel;
+            return string.IsNullOrEmpty(folder.Path) ? folder.Name : folder.Path;
         }
 
         private void ShowProgressToast(string tag, string filename)
