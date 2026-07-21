@@ -22,6 +22,20 @@ namespace ZorinConnect.Plugins
         private InputInjector _injector;
         private double _scrollAccum;
 
+        /// <summary>Phone-side mouse-move multiplier (KDE Connect applies sensitivity sender-side;
+        /// this is an extra local tuning knob). Persisted in app settings.</summary>
+        public static double Sensitivity
+        {
+            get => _sens;
+            set { _sens = value < 0.1 ? 0.1 : (value > 5.0 ? 5.0 : value); Core.SettingsStore.Set(Core.SettingsStore.App, "mouseSensitivity", _sens); }
+        }
+        private static double _sens = LoadSens();
+        private static double LoadSens()
+        {
+            var c = Core.SettingsStore.App;
+            return c.Values.TryGetValue("mouseSensitivity", out var v) && v is double d ? d : 1.0;
+        }
+
         public string Key => "RemoteInputPlugin";
         public string DisplayName => "Remote Input";
         public bool EnabledByDefault => true;
@@ -85,8 +99,8 @@ namespace ZorinConnect.Plugins
             {
                 Inject(new InjectedInputMouseInfo
                 {
-                    DeltaX = (int)Math.Round(dx),
-                    DeltaY = (int)Math.Round(dy),
+                    DeltaX = (int)Math.Round(dx * _sens),
+                    DeltaY = (int)Math.Round(dy * _sens),
                     MouseOptions = InjectedInputMouseOptions.MoveNoCoalesce,
                 });
                 return;
@@ -132,13 +146,13 @@ namespace ZorinConnect.Plugins
             }
             else
             {
-                // Unicode text -> inject each char by scan code with Unicode option.
+                // Unicode text -> ONE event per char (Android commits once via commitText). A
+                // down+up pair emits the character TWICE on W10M ("double letters").
                 foreach (var ch in np.GetString("key"))
                 {
                     _injector.InjectKeyboardInput(new[]
                     {
                         new InjectedInputKeyboardInfo { ScanCode = ch, KeyOptions = InjectedInputKeyOptions.Unicode },
-                        new InjectedInputKeyboardInfo { ScanCode = ch, KeyOptions = InjectedInputKeyOptions.Unicode | InjectedInputKeyOptions.KeyUp },
                     });
                 }
             }

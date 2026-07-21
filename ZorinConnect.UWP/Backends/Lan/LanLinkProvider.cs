@@ -192,39 +192,30 @@ namespace ZorinConnect.Backends.Lan
 
         private async void OnUdpMessageReceived(DatagramSocket sender, DatagramSocketMessageReceivedEventArgs args)
         {
-            StartupTrace.Mark("udp-rx");
             try
             {
                 string line;
                 using (var reader = args.GetDataReader())
                 {
-                    StartupTrace.Mark("udp-reader");
                     if (reader.UnconsumedBufferLength > NetworkPacket.MaxIdentityPacketSize) return; // §V5
                     var buf = new byte[reader.UnconsumedBufferLength];
                     reader.ReadBytes(buf);
                     line = Encoding.UTF8.GetString(buf, 0, buf.Length);
                 }
-                StartupTrace.Mark($"udp-line:{line.Length}");
 
                 var np = NetworkPacket.Deserialize(line);
-                StartupTrace.Mark($"udp-parsed:{np.Type}");
                 if (np.Type != NetworkPacket.TypeIdentity) return;
                 var info = DeviceInfo.FromIdentityPacket(np);
-                StartupTrace.Mark($"udp-info:{(info == null ? "null" : info.Id)}");
                 if (info == null) return;                                   // §V5
                 if (info.Id == DeviceHelper.DeviceId) return;               // own broadcast echo
 
                 var tcpPort = np.GetInt("tcpPort");
-                StartupTrace.Mark($"udp-tcpport:{tcpPort}");
                 if (tcpPort < MinPort || tcpPort > MaxPort) return;         // §I.tcp validated range
 
                 var remoteHost = args.RemoteAddress;
-                StartupTrace.Mark($"udp-remote:{remoteHost?.CanonicalName}");
                 if (!RateLimitOk(info.Id, remoteHost.CanonicalName)) return; // §V6
-                StartupTrace.Mark("udp-ratelimit-ok");
 
                 Log?.Invoke($"udp identity from {info.Name} ({remoteHost.CanonicalName}:{tcpPort})");
-                StartupTrace.Mark($"udp-connect-out:{remoteHost.CanonicalName}:{tcpPort}");
                 await ConnectAsync(remoteHost, tcpPort, info);
             }
             catch (Exception e)
@@ -515,10 +506,14 @@ namespace ZorinConnect.Backends.Lan
                 await StartUdpListenerAsync();
                 if (BackgroundManager.Registered) EnableBackgroundWake(BackgroundManager.SocketTaskId);
 
+                // §B2 loop-free: DO NOT rebroadcast here. Rebroadcasting made the desktop reconnect,
+                // whose socket-close fired another wake -> rebroadcast -> STORM. On wake we just
+                // rebind the listeners (re-attaching OnUdp/OnTcp handlers) and process the reclaimed
+                // inbound connection. The desktop re-dials / re-broadcasts on its own; our re-armed
+                // listeners answer (OnTcpConnectionReceived) or the UDP handler dials back — one
+                // connection per real desktop action, no self-inflicted cascade.
                 if (reason == SocketActivityTriggerReason.ConnectionAccepted && inbound != null)
                     HandleReclaimedInbound(inbound);
-                else
-                    await BroadcastIdentityAsync(); // desktop reconnects -> OnTcpConnectionReceived
 
                 StartupTrace.Mark("bg-rebound");
             }

@@ -30,9 +30,9 @@ namespace ZorinConnect.Core
                     MirrorToFile($"PREV-RUN-FULL=[{prev}]");
                 }
                 Buffer.Append(stage).Append(';');
-                var s = Buffer.ToString();
-                settings.Values[KeyCurrent] = s.Length > 4000 ? s.Substring(s.Length - 4000) : s;
-                MirrorToFile(s);
+                if (Buffer.Length > 4000) Buffer.Remove(0, Buffer.Length - 4000); // cap: no unbounded growth
+                settings.Values[KeyCurrent] = Buffer.ToString();
+                MirrorToFile(stage); // append ONLY the new mark (was: the whole buffer -> O(n^2) memory/IO -> crash)
             }
             catch
             {

@@ -71,29 +71,41 @@ namespace ZorinConnect.Plugins
                 StartupTrace.Mark("share-payload-open");
 
                 var folder = await DownloadsFolder.CreateFileAsync(filename, CreationCollisionOption.GenerateUniqueName);
+                var tag = "zc-recv-" + Math.Abs(filename.GetHashCode());
+                ShowProgressToast(tag, filename);
+                uint seq = 1;
+                var sw = System.Diagnostics.Stopwatch.StartNew();
                 using (stream)
                 using (var outStream = await folder.OpenStreamForWriteAsync())
                 {
-                    var buffer = new byte[4096];
+                    var buffer = new byte[8192];
                     long received = 0;
+                    long lastReport = 0;
                     int read;
                     while ((size <= 0 || received < size) &&
                            (read = stream.Read(buffer, 0, buffer.Length)) > 0)
                     {
                         outStream.Write(buffer, 0, read);
                         received += read;
+                        // Update the toast progress at most every ~400ms (Android throttles at 500).
+                        if (size > 0 && sw.ElapsedMilliseconds - lastReport >= 400)
+                        {
+                            lastReport = sw.ElapsedMilliseconds;
+                            UpdateProgress(tag, (double)received / size, $"{Human(received)} / {Human(size)}", seq++);
+                        }
                     }
                     await outStream.FlushAsync();
                     if (size > 0 && received != size)
                     {
                         _ctx?.Log?.Invoke($"share: size mismatch {received}/{size}, deleting");
                         await folder.DeleteAsync();
+                        FinishProgressToast(tag, filename, false, seq);
                         return;
                     }
                 }
                 StartupTrace.Mark($"share-saved:{folder.Name}");
-                _ctx?.Log?.Invoke($"share: saved {folder.Name}");
-                Toast("File received", folder.Name);
+                _ctx?.Log?.Invoke($"share: saved {folder.Name} -> Downloads");
+                FinishProgressToast(tag, folder.Name, true, seq);
 
                 if (np.GetBool("open"))
                     await Launcher.LaunchFileAsync(folder);
@@ -138,6 +150,71 @@ namespace ZorinConnect.Plugins
             }
             catch { }
         }
+
+        private const string ProgressGroup = "zc-share";
+
+        private void ShowProgressToast(string tag, string filename)
+        {
+            try
+            {
+                var xml =
+                    "<toast>" +
+                    "<visual><binding template='ToastGeneric'>" +
+                    "<text>Receiving file</text>" +
+                    "<text>" + XmlEscape(filename) + "</text>" +
+                    "<progress value='{progressValue}' status='{progressStatus}' valueStringOverride='{progressString}'/>" +
+                    "</binding></visual></toast>";
+                var doc = new XmlDocument();
+                doc.LoadXml(xml);
+                var toast = new ToastNotification(doc) { Tag = tag, Group = ProgressGroup };
+                var data = new NotificationData();
+                data.SequenceNumber = 0;
+                data.Values["progressValue"] = "0";
+                data.Values["progressStatus"] = "Receiving…";
+                data.Values["progressString"] = "0%";
+                toast.Data = data;
+                ToastNotificationManager.CreateToastNotifier().Show(toast);
+            }
+            catch (Exception e) { _ctx?.Log?.Invoke($"progress toast failed: {e.Message}"); }
+        }
+
+        private void UpdateProgress(string tag, double frac, string valueStr, uint seq)
+        {
+            try
+            {
+                var data = new NotificationData { SequenceNumber = seq };
+                data.Values["progressValue"] = frac.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+                data.Values["progressStatus"] = "Receiving…";
+                data.Values["progressString"] = valueStr;
+                ToastNotificationManager.CreateToastNotifier().Update(data, tag, ProgressGroup);
+            }
+            catch { }
+        }
+
+        private void FinishProgressToast(string tag, string name, bool ok, uint seq)
+        {
+            try
+            {
+                var notifier = ToastNotificationManager.CreateToastNotifier();
+                var data = new NotificationData { SequenceNumber = seq };
+                data.Values["progressValue"] = ok ? "1.0" : "0";
+                data.Values["progressStatus"] = ok ? "Saved to Downloads" : "Transfer failed";
+                data.Values["progressString"] = name;
+                notifier.Update(data, tag, ProgressGroup);
+            }
+            catch { }
+        }
+
+        private static string Human(long bytes)
+        {
+            if (bytes < 1024) return $"{bytes} B";
+            if (bytes < 1024 * 1024) return $"{bytes / 1024.0:0.#} KB";
+            if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024.0 * 1024):0.#} MB";
+            return $"{bytes / (1024.0 * 1024 * 1024):0.##} GB";
+        }
+
+        private static string XmlEscape(string s) =>
+            (s ?? "").Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("'", "&apos;");
 
         private static void Toast(string title, string body)
         {

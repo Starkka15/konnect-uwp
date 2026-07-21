@@ -42,6 +42,8 @@ namespace ZorinConnect
                 StartupTrace.Mark("core-started");
                 NameBox.Text = DeviceHelper.DeviceName;
                 OwnIdText.Text = $"{DeviceHelper.DeviceId} · proto v{DeviceHelper.ProtocolVersion} · tcp {core.Lan.TcpPort}";
+                SensSlider.Value = Plugins.RemoteInputPlugin.Sensitivity;
+                SensValue.Text = $"{Plugins.RemoteInputPlugin.Sensitivity:0.0}x";
             }
             catch (Exception ex)
             {
@@ -152,6 +154,12 @@ namespace ZorinConnect
         private void OnDismissRing(object sender, Windows.UI.Xaml.Input.TappedRoutedEventArgs e)
         {
             Plugins.FindMyPhonePlugin.Current?.StopRing();
+        }
+
+        private void OnSensChanged(object sender, Windows.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+        {
+            Plugins.RemoteInputPlugin.Sensitivity = e.NewValue;
+            if (SensValue != null) SensValue.Text = $"{e.NewValue:0.0}x";
         }
     }
 }

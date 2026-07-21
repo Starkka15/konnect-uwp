@@ -122,13 +122,9 @@ namespace ZorinConnect.Core
         /// <summary>Parse one line (without or with trailing newline). Throws JsonException on malformed input.</summary>
         public static NetworkPacket Deserialize(string line)
         {
-            StartupTrace.Mark("deser-parse");
             var root = JObject.Parse(line);
-            StartupTrace.Mark("deser-parsed");
             long id = ToLong(root["id"]);
-            StartupTrace.Mark("deser-id");
             var type = (string)root["type"];
-            StartupTrace.Mark($"deser-type:{type}");
             if (string.IsNullOrEmpty(type))
                 throw new JsonException("packet has no type");
             var body = root["body"] as JObject;

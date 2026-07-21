@@ -70,8 +70,8 @@ namespace ZorinConnect.Core
             }
         }
 
-        /// <summary>§B2: socket-activity background wake disabled until the rebroadcast loop is fixed.</summary>
-        public static bool EnableSocketActivity = false;
+        /// <summary>§B2: socket-activity wake re-enabled after removing the rebroadcast-on-wake loop.</summary>
+        public static bool EnableSocketActivity = true;
 
         public void OnSuspending() { if (EnableSocketActivity) Lan.TransferToBroker(); }
 
