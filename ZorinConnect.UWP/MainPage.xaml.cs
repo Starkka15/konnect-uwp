@@ -127,15 +127,40 @@ namespace ZorinConnect
             return b;
         }
 
+        // Log coalescing: a packet flood (e.g. sms.request_conversation storms, or an SFTP browse)
+        // used to schedule ONE UI dispatch PER line, each rebuilding the whole 20 KB TextBlock and
+        // re-scrolling — saturating the UI thread and causing visible freezes. Now bursts accumulate
+        // and flush as a SINGLE UI update.
+        private readonly object _logLock = new object();
+        private readonly System.Collections.Generic.Queue<string> _pendingLog = new System.Collections.Generic.Queue<string>();
+        private bool _logFlushScheduled;
+
         private void OnLog(string msg)
         {
-            _ = Dispatcher.RunAsync(CoreDispatcherPriority.Low, () =>
+            lock (_logLock)
             {
-                _log.AppendLine($"{DateTime.Now:HH:mm:ss} {msg}");
-                if (_log.Length > 20000) _log.Remove(0, _log.Length - 20000);
-                LogText.Text = _log.ToString();
-                LogScroll.ChangeView(null, LogScroll.ScrollableHeight, null, true);
-            });
+                _pendingLog.Enqueue($"{DateTime.Now:HH:mm:ss} {msg}");
+                if (_pendingLog.Count > 500) _pendingLog.Dequeue(); // bound memory under extreme floods
+                if (_logFlushScheduled) return;
+                _logFlushScheduled = true;
+            }
+            _ = Dispatcher.RunAsync(CoreDispatcherPriority.Low, FlushLog);
+        }
+
+        private void FlushLog()
+        {
+            System.Collections.Generic.List<string> batch;
+            lock (_logLock)
+            {
+                if (_pendingLog.Count == 0) { _logFlushScheduled = false; return; }
+                batch = new System.Collections.Generic.List<string>(_pendingLog);
+                _pendingLog.Clear();
+                _logFlushScheduled = false;
+            }
+            foreach (var line in batch) _log.AppendLine(line);
+            if (_log.Length > 20000) _log.Remove(0, _log.Length - 20000);
+            LogText.Text = _log.ToString();
+            LogScroll.ChangeView(null, LogScroll.ScrollableHeight, null, true);
         }
 
         private async void OnRefreshClick(object sender, RoutedEventArgs e)

@@ -87,7 +87,6 @@ namespace ZorinConnect.Backends.Sftp
                 return;
             }
             uint id = r.UInt32();
-            StartupTrace.Mark($"sftp-req:{type}#{id}");
             switch (type)
             {
                 case REALPATH: await DoRealPath(id, r); break;
@@ -122,7 +121,6 @@ namespace ZorinConnect.Backends.Sftp
             var path = Normalize(r.Utf8String());
             var item = await ResolveAsync(path);
             bool isDir = item is StorageFolder || (item == null && path == "/");
-            StartupTrace.Mark($"sftp-realpath:{path} dir={isDir}");
             var w = new SshWriter();
             w.Byte(NAME); w.UInt32(id); w.UInt32(1);
             w.String(path);                                   // filename
@@ -134,7 +132,6 @@ namespace ZorinConnect.Backends.Sftp
         private void DoReadLink(uint id, SshReader r)
         {
             var path = Normalize(r.Utf8String());
-            StartupTrace.Mark($"sftp-readlink:{path}");
             // We expose NO symlinks. A NAME reply would make gvfs treat the path as a symlink-to-self
             // and loop -> "unknown type". openssh returns EINVAL -> SSH_FX_FAILURE for readlink on a
             // non-link; gvfs reads that as "not a symlink" and proceeds to enumerate.
@@ -147,7 +144,6 @@ namespace ZorinConnect.Backends.Sftp
             var item = await ResolveAsync(path);
             if (item == null && path != "/") { SendStatus(id, NO_SUCH_FILE, "no such file"); return; }
             bool isDir = item is StorageFolder || path == "/";
-            StartupTrace.Mark($"sftp-stat:{path} dir={isDir} item={(item==null?"null":item.GetType().Name)}");
             var w = new SshWriter(); w.Byte(ATTRS); w.UInt32(id);
             WriteAttrs(w, item as StorageFile, isDir);
             SendSftp(w.ToArray());
@@ -390,17 +386,9 @@ namespace ZorinConnect.Backends.Sftp
             SendSftp(w.ToArray());
         }
 
-        private int _dumped;
         /// <summary>Frame an SFTP packet (length-prefixed) and hand it to the SSH channel.</summary>
         private void SendSftp(byte[] payload)
         {
-            if (_dumped < 8)
-            {
-                _dumped++;
-                var sb = new System.Text.StringBuilder();
-                for (int i = 0; i < payload.Length && i < 48; i++) sb.Append(payload[i].ToString("X2"));
-                StartupTrace.Mark($"sftp-tx[{payload.Length}]:{sb}");
-            }
             var w = new SshWriter(); w.UInt32((uint)payload.Length); w.Bytes(payload);
             _send(w.ToArray());
         }
